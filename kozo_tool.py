@@ -16,7 +16,7 @@ def read_current_data(filename=[]):
     else:
         pass
 
-    if filename!=[]:
+    if filename:
         print filename.encode('utf-8')
         df = pd.read_table(filename,delimiter='\t',escapechar='&',header=6,index_col=False,parse_dates=[0],na_values='NoData')
         df.index.names = ['index']
@@ -58,7 +58,7 @@ def read_array_data(filename=[]):
     else:
         pass
 
-    if filename!=[]:
+    if filename:
         print filename.encode('utf-8')
         # df = pd.read_table(filename,delimiter='\t',index_col=False,names=None)
         # df.index.names = ['index']
@@ -99,14 +99,14 @@ def load_figure(filename=[]):
     else:
         pass
 
-    if filename!=[]:
+    if filename:
         fig=joblib.load(filename)
         fig.show()
     else:
         print 'canceled!'
 
 def save_data(data,filename):
-    joblib.dump(data,filename)
+    joblib.dump(data,filename,compress=3)
 
 def load_data(filename=[]):
     if not(filename):
@@ -114,9 +114,12 @@ def load_data(filename=[]):
     else:
         pass
 
-    if filename!=[]:
+    if filename:
         data=joblib.load(filename)
         return data
     else:
         print 'canceled!'
         return []
+
+class structure():
+    pass
