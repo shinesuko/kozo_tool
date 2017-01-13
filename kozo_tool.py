@@ -4,12 +4,15 @@ import easygui
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib import cm
 import joblib
 import numpy as np
-import seaborn as sns; sns.set()
+# import seaborn as sns; sns.set()
 import math
 import os
 from datetime import datetime
+import re
+import mpld3
 
 
 def read_current_data(filename=[]):
@@ -252,3 +255,83 @@ def add_SEE_data(filename=[]):
     else:
         pass
     print('End of add_SEE_data.')
+
+def add_figure(filename=[],show=False,html=False,png=False,eps=False):
+    print('Starting... add_figure.')
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
+    else:
+        pass
+
+    if filename:
+        data=load_data(filename=filename)
+        print('Reading... '+filename.encode('utf-8'))
+        if  'current' in dir(data):
+            print('Reading... data.current')
+            column_names=data.current.columns #data.curren dataframeの列名list取得
+            current_list=[x for x in column_names if re.search("\[I\]", x) ]#column_names中の[I]を含む列を取得
+            print current_list
+            #create figure
+            fig=plt.figure()
+            fig.patch.set_facecolor('white')  # 図全体の背景色
+            ax=plt.axes()
+            plt.hold(True)
+            current_list=[x for x in column_names if re.search("\[I\]", x) ] #name list to plot
+            for i,name in enumerate(current_list):
+                plt.plot(data.current['DateTime'],data.current[name],color=cm.jet(float(i) / len(current_list)),label=name[0:-3])
+            #add irradiation duration
+            print(data.irradiation.irradiation_start)
+            print(data.irradiation.irradiation_end)
+            #calc difference
+            diff=data.current['DateTime'][0]-data.irradiation.irradiation_start
+            plt.hold(True)
+            plt.axvspan(ymin=1E-5,ymax=1,xmin=data.irradiation.irradiation_start+diff, xmax=data.irradiation.irradiation_end+diff,facecolor='gray', alpha=0.5)
+            #check SEE
+            if  'SEE' in dir(data):
+                print('SEE')
+            else:
+                print('No')
+
+            plt.ylim([1E-5,1E-1])
+            plt.yscale('log')
+            plt.legend(loc='lower right',prop={'size':10})
+            plt.xlabel('Time')
+            plt.ylabel('Current [A]')
+            plt.title(filename)
+            plt.xticks(rotation=30)
+            timeformat = mdates.DateFormatter('%H:%M:%S')
+            ax.xaxis.set_major_formatter(timeformat)
+            plt.tight_layout()  # タイトルの被りを防ぐ
+            if show:
+                plt.show()
+            else:
+                pass
+
+            #save figure as png
+            if png:
+                fig.savefig(filename[0:-6]+'.png',format='png',dpi=300)
+                print('Saving... .png format.')
+            else:
+                pass
+
+            #save as eps
+            if eps:
+                fig.savefig(filename[0:-6]+'.eps',format='eps',dpi=300)
+                print('Saving... .eps format.')
+            else:
+                pass
+
+            #save as html
+            if html:
+                save_filename = open(filename[0:-6]+'.html', 'wb')
+                mpld3.save_html(fig,save_filename)
+                print('Saving... .html format.')
+                save_filename.close()
+            else:
+                pass
+
+        else:
+            print(filename.encode('utf-8')+' has no data to plot figure')
+    else:
+        pass
+    print('End of add_figure.')
