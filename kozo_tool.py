@@ -148,7 +148,7 @@ def create_master_data(filename=[]):
 
         #open master data
         print filename.encode('utf-8')
-        master = pd.read_table(filename,delimiter=',',escapechar='&',header=0,index_col=False,parse_dates=[9,10,11,12],na_values=['NoData',' ','?'])
+        master = pd.read_table(filename,delimiter=',',escapechar='&',header=0,index_col=False,parse_dates=[9,10,11,12,13,14],na_values=['NoData',' ','?','#DIV/0!'])
         master.index.names = ['index']
         master.columns.names = ['column']
         data.master=master
@@ -257,7 +257,7 @@ def add_SEE_data(filename=[]):
         pass
     print('End of add_SEE_data.')
 
-def add_figure(filename=[],show=False,html=False,png=False,eps=False):
+def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False):
     print('Starting... add_figure.')
     if not(filename):
         filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
@@ -303,58 +303,68 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False):
 
             #save as html
             if html:
-                save_filename = open(filename[0:-6]+'.html', 'wb')
+                save_filename = open(filename[0:-7]+'.html', 'wb')
                 mpld3.save_html(fig,save_filename)
                 print('Saving... .html format.')
                 save_filename.close()
             else:
                 pass
 
-            #check SEE
-            if  'SEE' in dir(data):
-                print('SEE data found.')
-                #calc difference
-                diff_see_irrad=data.irradiation.see_start-data.irradiation.irradiation_start
-                # print(diff_see_irrad)
+            #add_SEE_data
+            if add_data:
+                #check current time
+                if  'current_start' in dir(data.irradiation):
+                    print('Current start data found.')
+                    # diff_current_irrad=data.irradiation.current_start.iloc[0]-data.irradiation.irradiation_start.iloc[0]
+                    # print(diff_current_irrad)
+                    plt.hold(True)
+                    plt.axvspan(data.irradiation.current_start.iloc[0],data.irradiation.current_end.iloc[0],facecolor='gray', alpha=0.1)
+                else:
+                    # plt.hold(True)
+                    plt.axvspan(data.irradiation.irradiation_start.iloc[0]+pd.Timedelta(seconds=16),data.irradiation.irradiation_end.iloc[0]+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
+                    print('No Current start data.')
 
-                plt.hold(True)
-                for t in data.SEE['DateTime']:
-                    # print t,type(t)
-                    # print t-diff_see_irrad.iloc[0],type(t-diff_see_irrad)
-                    plt.scatter(t-diff_see_irrad.iloc[0],0.01,marker='o')
+                #check SEE
+                if  ('SEE' in dir(data)) &('current_start' in dir(data.irradiation)):
+                    print('SEE data found.')
+                    #calc difference
+                    diff=data.irradiation.SEE_start.iloc[0]-data.irradiation.current_start.iloc[0]
 
-            else:
-                print('No SEE data.')
+                    if diff < pd.Timedelta(seconds=-1):
+                        diff=data.irradiation.current_start.iloc[0]-data.irradiation.SEEstart.iloc[0]
+                        print(diff)
+                        for t in data.SEE['DateTime']:
+                            plt.hold(True)
+                            plt.scatter(t+diff,0.01,marker='o')
+                    else:
 
-
-            #check current time
-            if  'current_start' in dir(data.irradiation):
-                print('Current start data found.')
-                diff_current_irrad=data.irradiation.current_start-data.irradiation.irradiation_start
-                print(diff_current_irrad.iloc[0])
-                plt.hold(True)
-                plt.axvspan(data.irradiation.irradiation_start.iloc[0]+diff_current_irrad.iloc[0],data.irradiation.irradiation_end.iloc[0]+diff_current_irrad.iloc[0],facecolor='gray', alpha=0.1)
-            else:
-                # plt.hold(True)
-                plt.axvspan(data.irradiation.irradiation_start.iloc[0]+pd.Timedelta(seconds=16),data.irradiation.irradiation_end.iloc[0]+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
-                print('No Current start data.')
-
-            if show:
-                plt.show()
+                        for t in data.SEE['DateTime']:
+                            # print t,type(t)
+                            print t-diff
+                            plt.hold(True)
+                            plt.scatter(t-diff,0.01,marker='o')
+                else:
+                    print('No SEE data.')
             else:
                 pass
 
             #save figure as png
             if png:
-                fig.savefig(filename[0:-6]+'.png',format='png',dpi=300)
+                fig.savefig(filename[0:-7]+'.png',format='png',dpi=300)
                 print('Saving... .png format.')
             else:
                 pass
 
             #save as eps
             if eps:
-                fig.savefig(filename[0:-6]+'.eps',format='eps',dpi=300)
+                fig.savefig(filename[0:-7]+'.eps',format='eps',dpi=300)
                 print('Saving... .eps format.')
+            else:
+                pass
+
+            #plot show
+            if show:
+                plt.show()
             else:
                 pass
 
@@ -381,8 +391,8 @@ def update_irradiation_data(filename=[]):
             #update master data
             data.master=master_data.master
             #update irradiation data
-            print(data.irradiation['ion'], data.irradiation['number'])
-            data.irradiation=data.master[(data.master['ion']==data.irradiation['ion']) & (data.master['number']==data.irradiation['number'])]
+            print(data.irradiation['ion'].iloc[0], data.irradiation['number'].iloc[0])
+            data.irradiation=data.master[(data.master['ion']==data.irradiation['ion'].iloc[0]) & (data.master['number']==data.irradiation['number'].iloc[0])]
             print data.irradiation
             print(filename+' has been overwritten.')
             formatted = '%03d' % int(data.irradiation['number'])
@@ -403,3 +413,13 @@ def update_all_irradiation_data():
             update_irradiation_data(filename=filename)
     else:
         print('Canceled.')
+
+def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True):
+    print('End of... data2figure.')
+    filenames=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    if filenames:
+        for filename in filenames:
+            add_figure(filename=filename,show=False,html=True,png=True,eps=False,add_data=add_data)
+    else:
+        print('Canceled.')
+    print('End of... data2figure.')
