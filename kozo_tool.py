@@ -13,6 +13,7 @@ import os
 from datetime import datetime
 import re
 import mpld3
+import dill
 
 
 def read_current_data(filename=[]):
@@ -20,15 +21,20 @@ def read_current_data(filename=[]):
         filename=easygui.fileopenbox()
     else:
         pass
-
     if filename:
         print filename.encode('utf-8')
-        df = pd.read_table(filename,delimiter='\t',escapechar='&',header=6,index_col=False,parse_dates=[0],na_values='NoData')
+        try:
+            df = pd.read_table(filename,delimiter='\t',escapechar='&',header=1,skipfooter=1,index_col=False,parse_dates=[0],na_values='NoData',engine='python')
+            df.columns = ['DateTime','Elap[sec]','Ch1[I]','Ch2[I]']
+            print('reading as 6581 file format.')
+        except:
+            # print('reading as 6629 file format.')
+            df = pd.read_table(filename,delimiter='\t',escapechar='&',header=6,index_col=False,parse_dates=[0],na_values='NoData')
         df.index.names = ['index']
         df.columns.names = ['column']
         return [df,filename]
     else:
-        print("Canceled!")
+        print('Canceled!')
         df=[]
         return [df,filename]
 
@@ -69,10 +75,10 @@ def read_array_data(filename=[]):
         # df.index.names = ['index']
         # print len(df.index)
         # df.columns.names = ['column']
-        data = np.loadtxt(filename,delimiter="\t")
+        data = np.loadtxt(filename,delimiter='\t')
         return [data,filename]
     else:
-        print("Canceled!")
+        print('Canceled!')
         df=[]
         return [data,filename]
 
@@ -197,17 +203,20 @@ def add_current_data(filename=[]):
 
     if filename:
         os.chdir(os.path.dirname(filename))
-        os.chdir("..")
+        os.chdir('..')
         print('cd to... '+os.getcwd())
         data=load_data(filename=filename)
         formatted = '%03d' % int(data.irradiation['number'])
         print type(data.irradiation['ion'])
-        ion=data.irradiation['ion'].iloc[0]
+        ion=data.irradiation['ion']
         print(ion+formatted+'.mydata is seleced')
         filenames_current=easygui.fileopenbox(msg='Open '+ion+formatted+' current data.', title=None, default='*', filetypes=['*.txt'], multiple=True)
         if filenames_current:
             data.current=pd.DataFrame(index=[], columns=['DateTime'])
-            data.field.append('current')
+            if 'current' in data.field:
+                pass
+            else:
+                data.field.append('current')
             print(data.current)
             for file in filenames_current:
                 df,_=read_current_data(filename=file)
@@ -232,7 +241,7 @@ def add_SEE_data(filename=[]):
 
     if filename:
         os.chdir(os.path.dirname(filename))
-        os.chdir("..")
+        os.chdir('..')
         print('cd to... '+os.getcwd())
         data=load_data(filename=filename)
         formatted = '%03d' % int(data.irradiation['number'])
@@ -241,7 +250,10 @@ def add_SEE_data(filename=[]):
         filenames_SEE=easygui.fileopenbox(msg='Open '+ion+formatted+' SEE data.', title=None, default='*', filetypes=['*.jpg'], multiple=True)
         if filenames_SEE:
             data.SEE=pd.DataFrame(index=[], columns=['DateTime'])
-            data.field.append('SEE')
+            if 'SEE' in data.field:
+                pass
+            else:
+                data.field.append('SEE')
             for file in filenames_SEE:
                 name,_ = os.path.splitext(os.path.basename(file).encode('utf-8'))
                 date=pd.to_datetime(name[:15],format='%Y%m%d_%H%M%S')
@@ -257,7 +269,7 @@ def add_SEE_data(filename=[]):
         pass
     print('End of add_SEE_data.')
 
-def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False):
+def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False):
     print('Starting... add_figure.')
     if not(filename):
         filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
@@ -270,14 +282,14 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
         if  'current' in dir(data):
             print('Reading... data.current')
             column_names=data.current.columns #data.curren dataframeの列名list取得
-            current_list=[x for x in column_names if re.search("\[I\]", x) ]#column_names中の[I]を含む列を取得
+            current_list=[x for x in column_names if re.search('\[I\]', x) ]#column_names中の[I]を含む列を取得
             print current_list
             #create figure
             fig=plt.figure()
             fig.patch.set_facecolor('white')  # 図全体の背景色
             ax=plt.axes()
             plt.hold(True)
-            current_list=[x for x in column_names if re.search("\[I\]", x) ] #name list to plot
+            current_list=[x for x in column_names if re.search('\[I\]', x) ] #name list to plot
             for i,name in enumerate(current_list):
                 plt.plot(data.current['DateTime'],data.current[name],color=cm.jet(float(i) / len(current_list)),label=name[0:-3])
             #add irradiation duration
@@ -295,7 +307,7 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             plt.legend(loc='lower right',prop={'size':10})
             plt.xlabel('Time')
             plt.ylabel('Current [A]')
-            plt.title(filename)
+            plt.title(os.path.basename(filename).encode('utf-8'))
             plt.xticks(rotation=30)
             timeformat = mdates.DateFormatter('%H:%M:%S')
             ax.xaxis.set_major_formatter(timeformat)
@@ -313,36 +325,45 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             #add_SEE_data
             if add_data:
                 #check current time
-                if  'current_start' in dir(data.irradiation):
+                if  'current_start' in list(data.master.columns): #instead of dir(data.irradiation)
                     print('Current start data found.')
                     # diff_current_irrad=data.irradiation.current_start.iloc[0]-data.irradiation.irradiation_start.iloc[0]
                     # print(diff_current_irrad)
                     plt.hold(True)
-                    plt.axvspan(data.irradiation.current_start.iloc[0],data.irradiation.current_end.iloc[0],facecolor='gray', alpha=0.1)
+                    if fix_time:
+                        plt.axvspan(xmin=data.irradiation.current_start.iloc[0],xmax=data.irradiation.current_end.iloc[0],facecolor='gray', alpha=0.1)
+                    else:
+                        print('fix_time:disabled')
+                        plt.axvspan(xmin=data.irradiation.irradiation_start.iloc[0],xmax=data.irradiation.irradiation_end.iloc[0],facecolor='gray', alpha=0.1)
                 else:
                     # plt.hold(True)
-                    plt.axvspan(data.irradiation.irradiation_start.iloc[0]+pd.Timedelta(seconds=16),data.irradiation.irradiation_end.iloc[0]+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
+                    #plt.axvspan(data.irradiation.irradiation_start+pd.Timedelta(seconds=16),data.irradiation.irradiation_end+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
                     print('No Current start data.')
 
                 #check SEE
-                if  ('SEE' in dir(data)) &('current_start' in dir(data.irradiation)):
+                if  ('SEE' in dir(data)) &('current_start' in list(data.master.columns)):
                     print('SEE data found.')
                     #calc difference
+                    # diff=data.irradiation.SEE_start.iloc[0]-data.irradiation.current_start.iloc[0]
                     diff=data.irradiation.SEE_start.iloc[0]-data.irradiation.current_start.iloc[0]
+                    if fix_time:
+                        if diff < pd.Timedelta(seconds=-1):
+                            diff=data.irradiation.current_start.iloc[0]-data.irradiation.SEEstart.iloc[0]
+                            print(diff)
+                            for t in data.SEE['DateTime']:
+                                plt.hold(True)
+                                plt.scatter(t+diff,0.01,marker='o')
+                        else:
 
-                    if diff < pd.Timedelta(seconds=-1):
-                        diff=data.irradiation.current_start.iloc[0]-data.irradiation.SEEstart.iloc[0]
-                        print(diff)
-                        for t in data.SEE['DateTime']:
-                            plt.hold(True)
-                            plt.scatter(t+diff,0.01,marker='o')
+                            for t in data.SEE['DateTime']:
+                                # print t,type(t)
+                                print t-diff
+                                plt.hold(True)
+                                plt.scatter(t-diff,0.01,marker='o')
                     else:
-
                         for t in data.SEE['DateTime']:
-                            # print t,type(t)
-                            print t-diff
                             plt.hold(True)
-                            plt.scatter(t-diff,0.01,marker='o')
+                            plt.scatter(t,0.01,marker='o')
                 else:
                     print('No SEE data.')
             else:
@@ -355,6 +376,7 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             else:
                 pass
 
+
             #save as eps
             if eps:
                 fig.savefig(filename[0:-7]+'.eps',format='eps',dpi=300)
@@ -366,7 +388,14 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             if show:
                 plt.show()
             else:
+                plt.clf()
                 pass
+
+            data.fig=fig
+            data.plt=plt
+            data.ax=ax
+            with open('C:/Users/14026/Desktop/test.mydata','wb') as f:
+                dill.dump(data,f)
 
         else:
             print(filename.encode('utf-8')+' has no data to plot figure')
@@ -414,12 +443,48 @@ def update_all_irradiation_data():
     else:
         print('Canceled.')
 
-def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True):
+def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True,fix_time=True):
     print('End of... data2figure.')
     filenames=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
     if filenames:
         for filename in filenames:
-            add_figure(filename=filename,show=False,html=True,png=True,eps=False,add_data=add_data)
+            add_figure(filename=filename,show=show,html=html,png=png,eps=eps,add_data=add_data,fix_time=fix_time)
     else:
         print('Canceled.')
     print('End of... data2figure.')
+
+def analyse_SEE_interval():
+    print('START')
+    filenames=easygui.fileopenbox(msg='Open mydata to analyse data.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    interval=pd.DataFrame(index=[], columns=['DateTime'])
+    if filenames:
+        for filename in filenames:
+            data=load_data(filename=filename)
+            if  'SEE' in dir(data):
+                # print filename.encode('utf-8')
+                tmp=data.SEE.sort_values(by=['DateTime'], ascending=True).diff().astype('timedelta64[s]').dropna()
+                interval=pd.concat([interval, tmp], ignore_index=True)
+            else:
+                print(filename.encode('utf-8')+' structure instance has no attribute SEE')
+
+    else:
+        pass
+    print interval.describe()
+    ax=interval.plot(y=['DateTime'],bins=50,alpha=0.5,kind='hist')
+    ax.set_xlabel('Interval [s]')
+    ax.legend_.remove()
+    fig = plt.gcf()
+    fig.savefig(os.path.dirname(filenames[0])+'/interval.png',format='png',dpi=300)
+    print('interval figure has been saved at '+os.path.dirname(filenames[0]).encode('utf-8')+'\interval.png')
+
+    stats=structure()
+    stats.interval=interval
+    stats.filenames=filenames
+    stats.version=1.0
+    stats.field=['version','field']
+    stats.field.append('interval')
+    stats.field.append('filenames')
+    save_data(stats,os.path.dirname(filenames[0])+'/stats.mydata')
+    print('stats data has been saved at '+os.path.dirname(filenames[0]).encode('utf-8')+'\stats.mydata')
+
+    print('END')
