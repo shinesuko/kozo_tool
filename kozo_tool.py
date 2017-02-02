@@ -25,10 +25,14 @@ def read_current_data(filename=[]):
         print filename.encode('utf-8')
         try:
             df = pd.read_table(filename,delimiter='\t',escapechar='&',header=1,skipfooter=1,index_col=False,parse_dates=[0],na_values='NoData',engine='python')
-            df.columns = ['DateTime','Elap[sec]','Ch1[I]','Ch2[I]']
+            print(len(df.columns))
+            if len(df.columns)==6:
+                df.columns = ['DateTime','Elap[sec]','Ch1[I]','unknown1','Ch2[I]','unknown2']
+            else:
+                df.columns = ['DateTime','Elap[sec]','Ch1[I]','Ch2[I]']
             print('reading as 6581 file format.')
         except:
-            # print('reading as 6629 file format.')
+            print('reading as 6629 file format.')
             df = pd.read_table(filename,delimiter='\t',escapechar='&',header=6,index_col=False,parse_dates=[0],na_values='NoData')
         df.index.names = ['index']
         df.columns.names = ['column']
@@ -207,8 +211,13 @@ def add_current_data(filename=[]):
         print('cd to... '+os.getcwd())
         data=load_data(filename=filename)
         formatted = '%03d' % int(data.irradiation['number'])
-        print type(data.irradiation['ion'])
-        ion=data.irradiation['ion']
+        try:
+            ion=data.irradiation.iloc[0]['ion']
+        except:
+            ion=data.irradiation.ion
+        # print(data.irradiation['ion'].values)
+        # print(data.irradiation.iloc[0]['ion'])
+        # print(data.irradiation.at[0,'ion'])
         print(ion+formatted+'.mydata is seleced')
         filenames_current=easygui.fileopenbox(msg='Open '+ion+formatted+' current data.', title=None, default='*', filetypes=['*.txt'], multiple=True)
         if filenames_current:
@@ -220,6 +229,7 @@ def add_current_data(filename=[]):
             print(data.current)
             for file in filenames_current:
                 df,_=read_current_data(filename=file)
+                print df
                 data.current=pd.merge(data.current,df,on='DateTime',how='outer')
             print(data.current)
             #save current data
@@ -269,7 +279,7 @@ def add_SEE_data(filename=[]):
         pass
     print('End of add_SEE_data.')
 
-def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False):
+def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False,ymin=1E-6,ymax=1E-1,yscale='log'):
     print('Starting... add_figure.')
     if not(filename):
         filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
@@ -302,8 +312,8 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             # plt.hold(True)
             # plt.axvspan(ymin=1E-5,ymax=1,xmin=data.irradiation.irradiation_start+diff, xmax=data.irradiation.irradiation_end+diff,facecolor='gray', alpha=0.5)
 
-            plt.ylim([1E-5,1E-1])
-            plt.yscale('log')
+            plt.ylim([ymin,ymax])
+            plt.yscale(yscale)
             plt.legend(loc='lower right',prop={'size':10})
             plt.xlabel('Time')
             plt.ylabel('Current [A]')
@@ -331,10 +341,17 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
                     # print(diff_current_irrad)
                     plt.hold(True)
                     if fix_time:
-                        plt.axvspan(xmin=data.irradiation.current_start.iloc[0],xmax=data.irradiation.current_end.iloc[0],facecolor='gray', alpha=0.1)
+                        try:
+                            plt.axvspan(xmin=data.irradiation.iloc[0]['current_start'],xmax=data.irradiation.iloc[0]['current_end'],facecolor='gray', alpha=0.1)
+                        except:
+                            plt.axvspan(xmin=data.irradiation.current_start.iloc[0],xmax=data.irradiation.current_end.iloc[0],facecolor='gray', alpha=0.1)
                     else:
                         print('fix_time:disabled')
-                        plt.axvspan(xmin=data.irradiation.irradiation_start.iloc[0],xmax=data.irradiation.irradiation_end.iloc[0],facecolor='gray', alpha=0.1)
+                        try:
+                            plt.axvspan(xmin=data.irradiation.iloc[0]['irradiation_start'],xmax=data.irradiation.iloc[0]['irradiation_end'],facecolor='gray', alpha=0.1)
+                        except:
+                            plt.axvspan(xmin=data.irradiation.irradiation_start,xmax=data.irradiation.irradiation_end,facecolor='gray', alpha=0.1)
+
                 else:
                     # plt.hold(True)
                     #plt.axvspan(data.irradiation.irradiation_start+pd.Timedelta(seconds=16),data.irradiation.irradiation_end+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
@@ -391,11 +408,11 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
                 plt.clf()
                 pass
 
-            data.fig=fig
-            data.plt=plt
-            data.ax=ax
-            with open('C:/Users/14026/Desktop/test.mydata','wb') as f:
-                dill.dump(data,f)
+            # data.fig=fig
+            # data.plt=plt
+            # data.ax=ax
+            # with open('C:/Users/14026/Desktop/test.mydata','wb') as f:
+            #     dill.dump(data,f)
 
         else:
             print(filename.encode('utf-8')+' has no data to plot figure')
@@ -420,8 +437,12 @@ def update_irradiation_data(filename=[]):
             #update master data
             data.master=master_data.master
             #update irradiation data
-            print(data.irradiation['ion'].iloc[0], data.irradiation['number'].iloc[0])
-            data.irradiation=data.master[(data.master['ion']==data.irradiation['ion'].iloc[0]) & (data.master['number']==data.irradiation['number'].iloc[0])]
+            try:
+                print(data.irradiation.iloc[0]['ion'], data.irradiation.iloc[0]['number'])
+                data.irradiation=data.master[(data.master['ion']==data.irradiation.iloc[0]['ion']) & (data.master['number']==data.irradiation.iloc[0]['number'])]
+            except:
+                                print(data.irradiation['ion'], data.irradiation['number'])
+                                data.irradiation=data.master[(data.master['ion']==data.irradiation['ion']) & (data.master['number']==data.irradiation['number'])]
             print data.irradiation
             print(filename+' has been overwritten.')
             formatted = '%03d' % int(data.irradiation['number'])
@@ -443,12 +464,12 @@ def update_all_irradiation_data():
     else:
         print('Canceled.')
 
-def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True,fix_time=True):
-    print('End of... data2figure.')
+def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True,fix_time=True,ymin=1E-6,ymax=1E-1,yscale='log'):
+    print('Starting... data2figure.')
     filenames=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
     if filenames:
         for filename in filenames:
-            add_figure(filename=filename,show=show,html=html,png=png,eps=eps,add_data=add_data,fix_time=fix_time)
+            add_figure(filename=filename,show=show,html=html,png=png,eps=eps,add_data=add_data,fix_time=fix_time,ymin=ymin,ymax=ymax,yscale=yscale)
     else:
         print('Canceled.')
     print('End of... data2figure.')
