@@ -186,9 +186,10 @@ def create_irradiation_data(filename=[]):
         data=load_data(filename)
         data.field.append('irradiation')
         for i, v in data.master.iterrows():
-            print(i, v['ion'], v['number'])
+            print(i, v['ion'], str(v['number']))
             #irradiation
-            data.irradiation=v
+            # data.irradiation=v
+            data.irradiation=data.master[(data.master.ion==v['ion']) & (data.master.number==v['number'])]
             formatted = '%03d' % int(v['number'])
             #save data
             save_data(data,os.path.dirname(filename)+'/'+v['ion']+formatted+'.mydata')
@@ -443,7 +444,7 @@ def update_irradiation_data(filename=[]):
             except:
                                 print(data.irradiation['ion'], data.irradiation['number'])
                                 data.irradiation=data.master[(data.master['ion']==data.irradiation['ion']) & (data.master['number']==data.irradiation['number'])]
-            print data.irradiation
+            # print data.irradiation
             print(filename+' has been overwritten.')
             formatted = '%03d' % int(data.irradiation['number'])
             #save data
