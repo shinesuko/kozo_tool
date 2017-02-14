@@ -14,7 +14,7 @@ from datetime import datetime
 import re
 import mpld3
 import dill
-
+from scipy import signal
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -280,7 +280,7 @@ def add_SEE_data(filename=[]):
         pass
     print('End of add_SEE_data.')
 
-def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False,ymin=1E-6,ymax=1E-1,yscale='log'):
+def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False,ymin=1E-6,ymax=1E-1,yscale='log',edge_detection=False):
     print('Starting... add_figure.')
     if not(filename):
         filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
@@ -299,7 +299,7 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             fig=plt.figure()
             fig.patch.set_facecolor('white')  # 図全体の背景色
             ax=plt.axes()
-            plt.hold(True)
+            # plt.hold(True)
             current_list=[x for x in column_names if re.search('\[I\]', x) ] #name list to plot
             for i,name in enumerate(current_list):
                 plt.plot(data.current['DateTime'],data.current[name],color=cm.jet(float(i) / len(current_list)),label=name[0:-3])
@@ -323,6 +323,13 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             timeformat = mdates.DateFormatter('%H:%M:%S')
             ax.xaxis.set_major_formatter(timeformat)
             plt.tight_layout()  # タイトルの被りを防ぐ
+
+            if edge_detection:
+                for i,name in enumerate(current_list):
+                    index=edge_detect(data.current[name],threshold=0.0000005)
+                    plt.plot(data.current.DateTime[index],data.current.loc[index,name],color=cm.jet(float(i) / len(current_list)),marker='^',linestyle = 'None',markerfacecolor='None')
+            else:
+                pass
 
             #save as html
             if html:
@@ -510,3 +517,18 @@ def analyse_SEE_interval():
     print('stats data has been saved at '+os.path.dirname(filenames[0]).encode('utf-8')+'\stats.mydata')
 
     print('END')
+
+def edge_detect(data,threshold=0.000001):
+    #difference
+    diff=np.diff(data)
+    #detect change when 0.000001 A/s
+    diff[np.abs(diff)< threshold]=0
+    pos_peak=diff.copy()
+    neg_peak=diff.copy()
+    pos_peak[pos_peak < 0]=0
+    neg_peak[neg_peak > 0]=0
+    positive_index = signal.find_peaks_cwt(pos_peak,np.arange(1,10,0.1)/10)
+    negative_index = signal.find_peaks_cwt(-neg_peak,np.arange(3,5,0.1)/10)
+    index=sorted(list(set(negative_index)),key=negative_index.index)
+    index.extend(positive_index)
+    return index
