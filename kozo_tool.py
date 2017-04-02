@@ -15,6 +15,7 @@ import re
 import mpld3
 import dill
 from scipy import signal
+import zipfile
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -532,3 +533,81 @@ def edge_detect(data,threshold=0.000001):
     index=sorted(list(set(negative_index)),key=negative_index.index)
     index.extend(positive_index)
     return index
+
+def get_cur_list_from_zip():
+    filename=easygui.fileopenbox(msg='Open .zip to get cur lsit.', title=None, default='*', filetypes=['*.zip'], multiple=False)
+    names=list()
+    if filename:
+        with zipfile.ZipFile(filename, 'r') as zf:
+            for name in zf.namelist():
+                if '.cur' in name:
+                    print(name)
+                    names.append(name)
+            return [names,filename]
+    else:
+        return []
+
+def open_cur_in_zip(filename=[],cur=[]):
+    if filename:
+        if 'alpha.cur' not in cur:
+            print('cur file found.')
+            with zipfile.ZipFile(filename, 'r') as zf:
+                tmp=pd.read_table(zf.open(cur),sep=' ',header=54)
+                temp=tmp.drop([tmp.columns[0],tmp.columns[13],tmp.columns[14],tmp.columns[15],tmp.columns[16],tmp.columns[17]],axis=1)
+                temp.columns=['Vsource','Vsource_EXT','Vdrain','Vdrain_EXT','Vgate','Vgate_EXT',\
+                        'Vbulk','Vbulk_EXT','Isource','Idrain','Igate','Ibulk']
+                # temp['file']=pd.Series(temp.index, index=temp.index)
+                # temp['file']=name
+                df=temp.dropna()
+            return df
+        else:
+            print('alpha.cur file found.')
+            with zipfile.ZipFile(filename, 'r') as zf:
+                tmp=pd.read_table(zf.open(cur),sep=' ',header=250,skipinitialspace=True,index_col=None,\
+                                  usecols=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+                                           21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+                                           41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60],
+                                  names=['Vsource','Vsource_EXT','Vdrain','Vdrain_EXT','Vgate','Vgate_EXT',\
+                              'Vbulk','Vbulk_EXT','Isource','Idrain','Igate','Isub',\
+                              'InTsource','IpTsource','IdTsource','IcTsource','ITsource','InTdrain','IpTdrain','IdTdrain',\
+                             'IcTdrain','ITdrain','InTgate','IpTgate','IdTgate','IcTgate','ITgate','InTsub','IpTsub','IdTsub',\
+                             'IcTsub','ITsub','Qn_sub_SUB(P)','Qp_sub_SUB(P)','QTotal_sub_SUB(P)','Qn_source_SOI(N)','Qp_source_SOI(N)',\
+                             'QTotal_source_SOI(N)','Qn_SOI(P)','Qp_SOI(P)','QTotal_SOI(P)','Qn_drain_SOI(N)','Qp_drain_SOI(N)','QTotal_drain_SOI(N)',\
+                             'Qn_upper_source(N)','Qp_upper_source(N)','QTotal_upper_source(N)','Qn_upper_drain(N)','Qp_upper_drain(N)',\
+                             'QTotal_upper_drain(N)','Qn_upperupper_source(N)','Qp_upperupper_source(N)','QTotal_upperupper_source(N)',\
+                             'Qn_gate_GatePoly(M)','Qp_gate_GatePoly(M)','QTotal_gate_GatePoly(M)','Qn_upperupper_drain(N)',\
+                              'Qp_upperupper_drain(N)','QTotal_upperupper_drain(N)','Func_Alpha1'])
+                time=pd.read_table(zf.open(cur),sep=' ',header=250,skipinitialspace=False,index_col=None,\
+                                  usecols=[1],names=['t'])
+                df=tmp.dropna()
+                df=pd.concat([df,time.dropna()],axis=1)
+            return df
+    else:
+        pass
+
+def plot_IdVg(df,label=''):
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(4, 3))
+    plt.axes(facecolor ="#FFFFFF")
+    plt.style.use('classic')
+
+    plt.plot(df['Vgate'],df['Idrain'],'r',label=label)
+    plt.yscale('log')
+    plt.ylabel('Idrain [A/um]')
+    plt.xlabel('Vdrain [V]')
+    plt.legend(loc=2,prop={'size':6})
+    plt.xlim([0,1.2])
+    plt.show()
+
+def plot_alpha(df,label=''):
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(4, 3))
+    plt.axes(facecolor ="#FFFFFF")
+    plt.style.use('classic')
+
+    plt.plot(df['t'],df['Idrain'],'b',label=label)
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.ylabel('Idrain [A/um]')
+    plt.xlabel('time [s]')
+    plt.legend(loc=2,prop={'size':6})
+    # plt.xlim([0,1.2])
+    plt.show()
