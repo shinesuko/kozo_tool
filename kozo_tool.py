@@ -16,6 +16,7 @@ import mpld3
 import dill
 from scipy import signal
 import zipfile
+from scipy import interpolate
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -611,3 +612,83 @@ def plot_alpha(df,label=''):
     plt.legend(loc=2,prop={'size':6})
     # plt.xlim([0,1.2])
     plt.show()
+
+def read_SRIM(thick=0.2):
+    #すべてのSRIM outputには対応していない
+    filename1=easygui.fileopenbox(msg='Open ion in Gold file', title=None, default='*', multiple=False)
+    filename2=easygui.fileopenbox(msg='Open ion in Silicon file', title=None, default='*', multiple=False)
+    print filename1.encode('utf-8')
+    print filename2.encode('utf-8')
+
+    # filename1
+    col_names = ['Energy','Energy_unit','de/dx_elec','de/dx_nuc','Range','Range_unit','Longitudinal_straggling','Longitudinal_straggling_unit','Lateral_straggling','Lateral_straggling_unit','A']
+    df1=pd.read_csv(filename1,sep=' ',header='infer',skiprows=24,skipinitialspace=True,skipfooter=13,names=col_names)
+    del df1['A']
+    df1['Energy'][df1['Energy_unit']=='keV']=df1['Energy'][df1['Energy_unit']=='keV'].copy()/1000
+    # df['Energy_unit'][df['Energy_unit']=='keV']='MeV'
+    df1['Range'][df1['Range_unit']=='A']=df1['Range'][df1['Range_unit']=='A'].copy()/10000
+    # df['Range_unit'][df['Range_unit']=='A']='um'
+    df1['Range_invert']= -df1['Range']+df1['Range'].iloc[-1]
+
+    # filename2
+    col_names = ['Energy','Energy_unit','de/dx_elec','de/dx_nuc','Range','Range_unit','Longitudinal_straggling','Longitudinal_straggling_unit','Lateral_straggling','Lateral_straggling_unit','A']
+    df2=pd.read_csv(filename2,sep=' ',header='infer',skiprows=24,skipinitialspace=True,skipfooter=13,names=col_names)
+    del df2['A']
+    df2['Energy'][df2['Energy_unit']=='keV']=df2['Energy'][df2['Energy_unit']=='keV'].copy()/1000
+    # df['Energy_unit'][df['Energy_unit']=='keV']='MeV'
+    df2['Range'][df2['Range_unit']=='A']=df2['Range'][df2['Range_unit']=='A'].copy()/10000
+    # df['Range_unit'][df['Range_unit']=='A']='um'
+    df2['Range_invert']= -df2['Range']+df2['Range'].iloc[-1]
+
+    # thick #Gold fiol
+    f = interpolate.interp1d(df1['Range_invert'], df1['Energy'])
+    energy=f(thick)
+    print(str(energy)+' [MeV] after ' +str(thick)+ ' um Au foil')
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(16, 10))
+    plt.style.use('classic')
+    ax1 = fig.add_subplot(211)
+    ax2 = ax1.twinx()
+
+    ax1.plot(df1['Range_invert'],df1['de/dx_elec'])
+    ax2.plot(df1['Range_invert'],df1['Energy'],'r')
+    ax1.set_ylabel('LET [MeV/(mg/cm2)]')
+    ax1.yaxis.label.set_color('blue')
+    ax2.set_ylabel('Energy [MeV]')
+    ax2.yaxis.label.set_color('red')
+    ax1.set_xlabel('Range [um]')
+    ax1.grid()
+    ax1.axvline(thick)
+    # ax1.set_ylim([0,6])
+    # ax2.set_ylim([0,30])
+    # ax1.set_xlim([0,35])
+    # plt.title(os.path.basename(filename1))
+    plt.grid()
+
+    g = interpolate.interp1d(df2['Energy'],df2['Range_invert'])
+    h = interpolate.interp1d(df2['Range_invert'], df2['de/dx_elec'])
+    df3=pd.DataFrame([[float(energy),g(float(energy)), h(g(float(energy)))]], columns=['Energy','Range_invert','de/dx_elec'])
+    df4=df2[df2['Energy']<float(energy)].append(df3,ignore_index=True)
+
+    ax3 = fig.add_subplot(212)
+    ax4 = ax3.twinx()
+    ax3.plot(df2['Range_invert'],df2['de/dx_elec'])
+    ax4.plot(df2['Range_invert'],df2['Energy'],'r')
+    ax3.set_ylabel('LET [MeV/(mg/cm2)]')
+    ax3.yaxis.label.set_color('blue')
+    ax4.set_ylabel('Energy [MeV]')
+    ax4.yaxis.label.set_color('red')
+    ax3.set_xlabel('Range [um]')
+    ax3.grid()
+    # ax1.set_ylim([0,6])
+    # ax2.set_ylim([0,30])
+    # ax1.set_xlim([0,35])
+    # plt.title(os.path.basename(filename2))
+    plt.grid()
+    plt.show()
+
+    print('range: '+str(df4['Range_invert'].head(1).values-df4['Range_invert'].tail(1).values))
+    print('LET@surface: '+str(df4['de/dx_elec'].tail(1).values))
+    print('Energy@surface: '+str(float(energy)))
+
+    return [df1,df2,df3,df4]
