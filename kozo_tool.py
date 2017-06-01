@@ -692,3 +692,38 @@ def read_SRIM(thick=0.2):
     print('Energy@surface: '+str(float(energy)))
 
     return [df1,df2,df3,df4]
+
+def SRIM():
+    filename=easygui.fileopenbox()
+    print filename.encode('utf-8')
+    #すべてのSRIM outputには対応していない
+    col_names = ['Energy','Energy_unit','de/dx_elec','dE/dx_nuc','Range','Range_unit','Longitudinal_straggling','Longitudinal_straggling_unit','Lateral_straggling','Lateral_straggling_unit','A']
+    df=pd.read_csv(filename,sep=' ',header='infer',skiprows=24,skipinitialspace=True,skipfooter=13,names=col_names)
+    del df['A']
+    df['Energy'][df['Energy_unit']=='keV']=df['Energy'][df['Energy_unit']=='keV'].copy()/1000
+    # df['Energy_unit'][df['Energy_unit']=='keV']='MeV'
+    df['Range'][df['Range_unit']=='A']=df['Range'][df['Range_unit']=='A'].copy()/10000
+    # df['Range_unit'][df['Range_unit']=='A']='um'
+    df['Range_invert']= -df['Range']+df['Range'].iloc[-1]
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(16, 5))
+    plt.style.use('classic')
+    ax1 = fig.add_subplot(111)
+    ax2 = ax1.twinx()
+
+    ax1.plot(df['Range_invert'],df['de/dx_elec'])
+    ax2.plot(df['Range_invert'],df['Energy'],'r')
+    ax1.set_ylabel('LET [MeV/(mg/cm2)]')
+    ax1.yaxis.label.set_color('blue')
+    ax2.set_ylabel('Energy [MeV]')
+    ax2.yaxis.label.set_color('red')
+    ax1.set_xlabel('Range [um]')
+    ax1.grid()
+    ax1.set_ylim([0,20])
+    ax2.set_ylim([0,80])
+    ax1.set_xlim([0,18])
+    plt.title(os.path.basename(filename))
+    plt.grid()
+    plt.show()
+
+    return df
