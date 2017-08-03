@@ -258,9 +258,9 @@ def add_SEE_data(filename=[]):
         print('cd to... '+os.getcwd())
         data=load_data(filename=filename)
         formatted = '%03d' % int(data.irradiation['number'])
-        ion=data.irradiation['ion']
+        ion=data.irradiation['ion'].values
         print(ion+formatted+'.mydata is seleced')
-        filenames_SEE=easygui.fileopenbox(msg='Open '+ion+formatted+' SEE data.', title=None, default='*', filetypes=['*.jpg'], multiple=True)
+        filenames_SEE=easygui.fileopenbox(msg='Open '+ion+formatted+' SEE data.', title=None, default='*', filetypes=['*.jpg','*.png'], multiple=True)
         if filenames_SEE:
             data.SEE=pd.DataFrame(index=[], columns=['DateTime'])
             if 'SEE' in data.field:
@@ -269,7 +269,10 @@ def add_SEE_data(filename=[]):
                 data.field.append('SEE')
             for file in filenames_SEE:
                 name,_ = os.path.splitext(os.path.basename(file).encode('utf-8'))
-                date=pd.to_datetime(name[:15],format='%Y%m%d_%H%M%S')
+                try:
+                    date=pd.to_datetime(name[:15],format='%Y%m%d_%H%M%S')
+                except:
+                    date=pd.to_datetime(name[:14],format='%Y%m%d%H%M%S')
                 data.SEE=pd.concat([data.SEE, pd.DataFrame(date,index=[0], columns=['DateTime'])], ignore_index=True)
             print data.SEE
             #save SEE data
@@ -298,8 +301,10 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
             current_list=[x for x in column_names if re.search('\[I\]', x) ]#column_names中の[I]を含む列を取得
             print current_list
             #create figure
-            fig=plt.figure()
-            fig.patch.set_facecolor('white')  # 図全体の背景色
+            # fig=plt.figure()
+            # fig.patch.set_facecolor('white')  # 図全体の背景色
+            fig=plt.figure(facecolor ="#FFFFFF")
+            plt.style.use('classic')
             ax=plt.axes()
             # plt.hold(True)
             current_list=[x for x in column_names if re.search('\[I\]', x) ] #name list to plot
@@ -349,7 +354,7 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
                     print('Current start data found.')
                     # diff_current_irrad=data.irradiation.current_start.iloc[0]-data.irradiation.irradiation_start.iloc[0]
                     # print(diff_current_irrad)
-                    plt.hold(True)
+                    # plt.hold(True)
                     if fix_time:
                         try:
                             plt.axvspan(xmin=data.irradiation.iloc[0]['current_start'],xmax=data.irradiation.iloc[0]['current_end'],facecolor='gray', alpha=0.1)
@@ -361,7 +366,11 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
                             plt.axvspan(xmin=data.irradiation.iloc[0]['irradiation_start'],xmax=data.irradiation.iloc[0]['irradiation_end'],facecolor='gray', alpha=0.1)
                         except:
                             plt.axvspan(xmin=data.irradiation.irradiation_start,xmax=data.irradiation.irradiation_end,facecolor='gray', alpha=0.1)
-
+                elif  'irradiation_start' in list(data.master.columns): #instead of dir(data.irradiation)
+                    try:
+                        plt.axvspan(xmin=data.irradiation.iloc[0]['irradiation_start'],xmax=data.irradiation.iloc[0]['irradiation_end'],facecolor='gray', alpha=0.1)
+                    except:
+                        plt.axvspan(xmin=data.irradiation.irradiation_start,xmax=data.irradiation.irradiation_end,facecolor='gray', alpha=0.1)
                 else:
                     # plt.hold(True)
                     #plt.axvspan(data.irradiation.irradiation_start+pd.Timedelta(seconds=16),data.irradiation.irradiation_end+pd.Timedelta(seconds=16),facecolor='gray', alpha=0.1)
@@ -391,6 +400,13 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
                         for t in data.SEE['DateTime']:
                             plt.hold(True)
                             plt.scatter(t,0.01,marker='o')
+                elif  'SEE' in dir(data):
+                    for t in data.SEE['DateTime']:
+                        # print t,type(t)
+                        # print t-diff
+                        # plt.hold(True)
+                        plt.scatter(t,0.01,color='blue',marker='o')
+
                 else:
                     print('No SEE data.')
             else:
@@ -719,11 +735,238 @@ def SRIM():
     ax2.yaxis.label.set_color('red')
     ax1.set_xlabel('Range [um]')
     ax1.grid()
-    ax1.set_ylim([0,20])
-    ax2.set_ylim([0,80])
-    ax1.set_xlim([0,18])
     plt.title(os.path.basename(filename))
     plt.grid()
     plt.show()
 
+    return df
+
+def plot_waveform(filename=[]):
+    if not(filename):
+        filename=easygui.fileopenbox()
+    else:
+        pass
+    if filename:
+        print filename.encode('utf-8')
+        names=['t','XOR','CLK','SMUX_IN','SMUX_OUT8','SMUX_OUT7','SMUX_OUT6','SMUX_OUT5','SMUX_OUT4','SMUX_OUT3','SMUX_OUT2','SMUX_OUT1']
+        df=pd.read_csv(filename,sep='\t',skiprows=22,names=names)
+        if len(df.index) == 0:
+            print u'blank file!'
+        else:
+            dt0=8.000000E-10 #delta t for XOR
+            dt1=2.000000E-9  #delta t for degital signal
+            df.t=df.index*dt0*10**6  #us
+            df.t1=df.index*dt1*10**6 #us
+            fig=plt.figure(facecolor ="#FFFFFF",figsize=(16,16))
+            plt.style.use('classic')
+            f=np.diff(df.CLK)
+            CLK_index = np.where(f>0.5)
+
+            def plot_CLK_edge():
+                for t in df.t1[CLK_index]:
+                    plt.axvline(x=t,linestyle='--')
+
+            xlim=[3,5]
+
+            ax=plt.subplot(11,1,1)
+            plt.plot(df.t,df.XOR)
+            plt.xticks([])
+            plt.yticks([0,5])
+            plt.ylim([-1,5])
+            plt.xlim(xlim)
+            plt.ylabel('XOR')
+            plt.title(os.path.basename(filename))
+
+            plt.subplot(11,1,2)
+            plt.plot(df.t1,df.CLK)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.xlim(xlim)
+            plt.ylabel('CLK')
+
+            plt.subplot(11,1,3)
+            plt.plot(df.t1,df.SMUX_IN)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_IN')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,4)
+            plt.plot(df.t1,df.SMUX_OUT8)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT8')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,5)
+            plt.plot(df.t1,df.SMUX_OUT7)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT7')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,6)
+            plt.plot(df.t1,df.SMUX_OUT6)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT6')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,7)
+            plt.plot(df.t1,df.SMUX_OUT5)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT5')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,8)
+            plt.plot(df.t1,df.SMUX_OUT4)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT4')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,9)
+            plt.plot(df.t1,df.SMUX_OUT3)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT3')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,10)
+            plt.plot(df.t1,df.SMUX_OUT2)
+            plt.xticks([])
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT2')
+            plot_CLK_edge()
+            plt.xlim(xlim)
+
+            plt.subplot(11,1,11)
+            plt.plot(df.t1,df.SMUX_OUT1)
+            plt.yticks([0,1])
+            plt.ylim([-0.1,1.1])
+            plt.ylabel('SMUX_OUT1')
+            plt.xlabel('time [us]')
+            plt.tight_layout()
+            plot_CLK_edge()
+            plt.xlim(xlim)
+            # plt.show()
+            fig.savefig(filename[0:-4]+'.png',format='png',dpi=300)
+            print('Saving... .png format.')
+            plt.clf()
+
+        return [df,filename]
+    else:
+        print('Canceled!')
+        df=[]
+        return [df,filename]
+
+def plot_waveform_auto():
+    filenames=easygui.fileopenbox(msg='Select waveform data.', title=None, default='*', filetypes=['*.csv'], multiple=True)
+    for filename in filenames:
+        plot_waveform(filename=filename)
+    print 'finish!'
+
+def plot_MCA(filename=[]):
+    if not filename:
+        filename=easygui.fileopenbox(msg='Choose .JAC', title=None, default=None,multiple=False)
+    else:
+        pass
+    print filename.encode('utf-8')
+
+    df = pd.read_csv(filename,sep=',',names=['count'])
+    df=df.drop([0,1,2])
+    df.index=range(4, 1025)
+    df[['count']]=df[['count']].astype(int)
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(16, 5))
+    plt.style.use('classic')
+    plt.bar(df.index,df['count'], width=1.0,edgecolor='none')
+    plt.yscale('log')
+    plt.xlabel('channel')
+    plt.ylabel('Counts')
+    plt.xlim([0,1000])
+    plt.grid(True)
+    # plt.title(filename)
+    plt.show()
+
+    return df
+
+def analyse_waveform(filename=[]):
+    if not(filename):
+        filename=easygui.fileopenbox()
+    else:
+        pass
+    if filename:
+        print filename.encode('utf-8')
+        names=['t','XOR','CLK','SMUX_IN','SMUX_OUT8','SMUX_OUT7','SMUX_OUT6','SMUX_OUT5','SMUX_OUT4','SMUX_OUT3','SMUX_OUT2','SMUX_OUT1']
+        df=pd.read_csv(filename,sep='\t',skiprows=22,names=names)
+        if len(df.index) == 0:
+            print u'blank file!'
+            error_name=np.nan
+            duration=np.nan
+            error_mode=np.nan
+        else:
+            dt0=8.000000E-10 #delta t for XOR
+            dt1=2.000000E-9  #delta t for degital signal
+            df.t=df.index*dt0*10**6  #us
+            df.t1=df.index*dt1*10**6 #us
+            if len(df[['SMUX_IN','SMUX_OUT1','SMUX_OUT2','SMUX_OUT3','SMUX_OUT4','SMUX_OUT5','SMUX_OUT6','SMUX_OUT7','SMUX_OUT8']].dropna().corr().dropna(axis=0,how='all').index)==1:
+                error_name=df[['SMUX_IN','SMUX_OUT1','SMUX_OUT2','SMUX_OUT3','SMUX_OUT4','SMUX_OUT5','SMUX_OUT6','SMUX_OUT7','SMUX_OUT8']].dropna().corr().dropna(axis=0,how='all').index.values[0]
+                if df.SMUX_IN.mean()<0.5:
+                    error_mode='LowToHigh'
+                else:
+                    error_mode='HighToLow'
+            else:
+                error_name='other'
+                error_mode='other'
+            # print error_name
+            XOR=np.logical_xor((df.SMUX_OUT1.dropna()==1),(df.SMUX_OUT2.dropna()==1))\
+                | np.logical_xor((df.SMUX_OUT3.dropna()==1),(df.SMUX_OUT4.dropna()==1))\
+                | np.logical_xor((df.SMUX_OUT5.dropna()==1),(df.SMUX_OUT6.dropna()==1))\
+                | np.logical_xor((df.SMUX_OUT7.dropna()==1),(df.SMUX_OUT8.dropna()==1))
+            duration=dt1*len(XOR[XOR==True])
+            # print str(duration)+'s'
+        return [error_name,duration,error_mode]
+
+def analyse_waveform_auto():
+    filenames=easygui.fileopenbox(msg='Select waveform data.', title=None, default='*', filetypes=['*.csv'], multiple=True)
+    names=['filename','error','duration','test','error_mode']
+    df=pd.DataFrame(index=[],columns=names)
+    for filename in filenames:
+        error_name,duration,error_mode=analyse_waveform(filename=filename)
+        tmp=pd.DataFrame(
+                {'filename': [os.path.basename(filename)],
+                'error': [error_name],
+                 'duration': [duration],
+                 'test': [os.path.dirname(filename)[-5:]],
+                 'error_mode': [error_mode]
+                 })
+        df=pd.concat([df, tmp], ignore_index=True)
+    print df
+    # print df.describe()
+    # print df.error.value_counts()
+    # print df.error_mode.value_counts()
+    # print os.path.dirname(filename)[-5:]
+    df.to_csv('C:/Users/14026/Desktop/'+os.path.dirname(filename)[-5:]+'.csv')
+    print 'finish!'
+    print df.pivot_table(values = 'duration',
+               index = ['error_mode'], columns = ['error'],
+               aggfunc = 'count',fill_value = 0)
     return df
