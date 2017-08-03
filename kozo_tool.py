@@ -883,28 +883,44 @@ def plot_waveform_auto():
         plot_waveform(filename=filename)
     print 'finish!'
 
-def plot_MCA(filename=[]):
+def plot_MCA(filename=[],ROI=False):
     if not filename:
         filename=easygui.fileopenbox(msg='Choose .JAC', title=None, default=None,multiple=False)
     else:
         pass
-    print filename.encode('utf-8')
 
-    df = pd.read_csv(filename,sep=',',names=['count'])
-    df=df.drop([0,1,2])
-    df.index=range(4, 1025)
-    df[['count']]=df[['count']].astype(int)
+    if filename:
+        print filename.encode('utf-8')
 
-    fig=plt.figure(facecolor ="#FFFFFF",figsize=(16, 5))
-    plt.style.use('classic')
-    plt.bar(df.index,df['count'], width=1.0,edgecolor='none')
-    plt.yscale('log')
-    plt.xlabel('channel')
-    plt.ylabel('Counts')
-    plt.xlim([0,1000])
-    plt.grid(True)
-    # plt.title(filename)
-    plt.show()
+        df = pd.read_csv(filename,sep=',',names=['count'])
+        df=df.drop([0,1,2])
+        df.index=range(4, 1025)
+        df[['count']]=df[['count']].astype(int)
+
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(16, 5))
+        plt.style.use('classic')
+        plt.bar(df.index,df['count'], width=1.0,edgecolor='none')
+        plt.yscale('log')
+        plt.xlabel('channel')
+        plt.ylabel('Counts')
+        plt.xlim([0,1000])
+        plt.grid(True)
+        plt.title(os.path.basename(filename))
+        if ROI:
+            x_min=2.0*df['count'][df['count']>1].argmax()-df['count'][df['count']>1].index.max()
+            x_max=df['count'][df['count']>1].index.max()
+            plt.fill_between(x=[x_min,x_max],y1=1,y2=10000,facecolor='blue', alpha=0.1)
+            ROI=df['count'][(x_min < df.index) & (df.index < x_max)].sum()
+            noise=df['count'][(x_min > df.index) | (df.index > x_max)].sum()
+            print 'ROI  : '+str(ROI)+' counts'
+            print 'noise: '+str(noise)+' counts'
+            print 'ratio: '+str(float(noise)/(ROI+noise)*100)+' %'
+        else:
+            pass
+        # plt.title(filename)
+        plt.show()
+    else:
+        df=[]
 
     return df
 
