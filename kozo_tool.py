@@ -706,6 +706,8 @@ def read_SRIM(thick=0.2):
     print('range: '+str(df4['Range_invert'].head(1).values-df4['Range_invert'].tail(1).values))
     print('LET@surface: '+str(df4['de/dx_elec'].tail(1).values))
     print('Energy@surface: '+str(float(energy)))
+    print('Peak_LET: '+str(df4['de/dx_elec'].max()))
+    print('Depth@Peak_LET: '+str(df4['Range_invert'][df4['de/dx_elec'].idxmax()]))
 
     return [df1,df2,df3,df4]
 
@@ -739,6 +741,12 @@ def SRIM():
     plt.grid()
     plt.show()
 
+    print('range: '+str(df['Range_invert'].head(1).values-df['Range_invert'].tail(1).values))
+    print('LET@surface: '+str(df['de/dx_elec'].tail(1).values))
+    print('Energy@surface: '+str(df['Energy'].tail(1).values))
+    print('Peak_LET: '+str(df['de/dx_elec'].max()))
+    print('Depth@Peak_LET: '+str(df['Range_invert'][df['de/dx_elec'].idxmax()]))
+    # print('Energy@surface: '+str(float(energy)))
     return df
 
 def plot_waveform(filename=[]):
@@ -766,7 +774,7 @@ def plot_waveform(filename=[]):
                 for t in df.t1[CLK_index]:
                     plt.axvline(x=t,linestyle='--')
 
-            xlim=[3,5]
+            xlim=[1,8]
 
             ax=plt.subplot(11,1,1)
             plt.plot(df.t,df.XOR)
@@ -986,3 +994,41 @@ def analyse_waveform_auto():
                index = ['error_mode'], columns = ['error'],
                aggfunc = 'count',fill_value = 0)
     return df
+
+def add_SET_data(filename=[]):
+    print('Starting... add_SET_data.')
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
+    else:
+        pass
+
+    if filename:
+        os.chdir(os.path.dirname(filename))
+        os.chdir('..')
+        print('cd to... '+os.getcwd())
+        data=load_data(filename=filename)
+        formatted = '%03d' % int(data.irradiation['number'])
+        ion=data.irradiation['ion'].values
+        print(ion+formatted+'.mydata is seleced')
+        filenames_SET=easygui.fileopenbox(msg='Open '+ion+formatted+' SET data.', title=None, default='*', filetypes=['*.csv'], multiple=False)
+        if filenames_SET:
+            data.SET=pd.DataFrame(index=[], columns=['DateTime'])
+            if 'SET' in data.field:
+                pass
+            else:
+                data.field.append('SET')
+            names=['id','duration','error','error_mode','filename','test']
+            df=pd.DataFrame(index=[],columns=names)
+            df=pd.read_csv(filenames_SET,names=names,skiprows=1)
+            data.SET=df
+            data.SET['time']=data.SET.filename.map(lambda x: pd.to_datetime(x[0:14]))
+            print data.SET
+            #save SEE data
+            save_data(data,filename)
+            print('Saving... SET data at '+filename.encode('utf-8'))
+
+        else:
+            print('Canceled.')
+    else:
+        pass
+    print('End of add_SET_data.')
