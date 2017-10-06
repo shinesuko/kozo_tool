@@ -920,9 +920,10 @@ def plot_MCA(filename=[],ROI=False):
             plt.fill_between(x=[x_min,x_max],y1=1,y2=10000,facecolor='blue', alpha=0.1)
             ROI=df['count'][(x_min < df.index) & (df.index < x_max)].sum()
             noise=df['count'][(x_min > df.index) | (df.index > x_max)].sum()
-            print 'ROI  : '+str(ROI)+' counts'
-            print 'noise: '+str(noise)+' counts'
-            print 'ratio: '+str(float(noise)/(ROI+noise)*100)+' %'
+            print 'ROI      : '+str(ROI)+' counts'
+            print 'noise    : '+str(noise)+' counts'
+            print 'ratio    : '+str(float(noise)/(ROI+noise)*100)+' %'
+            print 'peak ch  : ' +str(df['count'][df['count']>1].argmax())
         else:
             pass
         # plt.title(filename)
