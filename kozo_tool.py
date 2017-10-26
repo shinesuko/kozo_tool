@@ -17,6 +17,7 @@ import dill
 from scipy import signal
 import zipfile
 from scipy import interpolate
+import netCDF4
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -747,7 +748,18 @@ def SRIM():
     print('Peak_LET: '+str(df['de/dx_elec'].max()))
     print('Depth@Peak_LET: '+str(df['Range_invert'][df['de/dx_elec'].idxmax()]))
     # print('Energy@surface: '+str(float(energy)))
-    return df
+
+    #dataframe for result
+    result=pd.DataFrame(
+                        {'filename': [filename],
+                        'range': [df['Range_invert'].head(1).values-df['Range_invert'].tail(1).values],
+                         'LET@surfac': [df['de/dx_elec'].tail(1).values],
+                         'Energy@surface': [df['Energy'].tail(1).values],
+                         'Peak_LET': [df['de/dx_elec'].max()],
+                         'Depth@Peak_LET': [df['Range_invert'][df['de/dx_elec'].idxmax()]]
+                         })
+
+    return df,result
 
 def plot_waveform(filename=[]):
     if not(filename):
@@ -891,7 +903,7 @@ def plot_waveform_auto():
         plot_waveform(filename=filename)
     print 'finish!'
 
-def plot_MCA(filename=[],ROI=False):
+def plot_MCA(filename=[],ROI=True):
     if not filename:
         filename=easygui.fileopenbox(msg='Choose .JAC', title=None, default=None,multiple=False)
     else:
@@ -900,6 +912,10 @@ def plot_MCA(filename=[],ROI=False):
     if filename:
         print filename.encode('utf-8')
 
+        #dataframe for result
+        result=pd.DataFrame(index=[],columns=['filename','ROI','Noise','peak'])
+
+        #MCA data plot
         df = pd.read_csv(filename,sep=',',names=['count'])
         df=df.drop([0,1,2])
         df.index=range(4, 1025)
@@ -924,14 +940,22 @@ def plot_MCA(filename=[],ROI=False):
             print 'noise    : '+str(noise)+' counts'
             print 'ratio    : '+str(float(noise)/(ROI+noise)*100)+' %'
             print 'peak ch  : ' +str(df['count'][df['count']>1].argmax())
+            tmp=pd.DataFrame(
+                    {'filename': [filename],
+                    'ROI': [ROI],
+                     'Noise': [noise],
+                     'peak': [df['count'][df['count']>1].argmax()]
+                     })
+            result=pd.concat([result, tmp], ignore_index=True)
         else:
             pass
         # plt.title(filename)
         plt.show()
     else:
+        result=[]
         df=[]
 
-    return df
+    return df,result
 
 def analyse_waveform(filename=[]):
     if not(filename):
@@ -1033,3 +1057,54 @@ def add_SET_data(filename=[]):
     else:
         pass
     print('End of add_SET_data.')
+
+def read_goes_Xray(filenames=[]):
+    print('Starting... read_goes_Xray.')
+    if not(filenames):
+        filenames=easygui.fileopenbox(msg='Open GOES Xray  .cdf mydata.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
+    else:
+        pass
+    data=pd.DataFrame(index=[], columns=['time','A_AVG','B_AVG'])
+    if filenames:
+        for filename in filenames:
+            print filename.encode('utf-8')
+            nc = netCDF4.Dataset(filename, 'r')
+            tmp=pd.DataFrame({ 'time':nc.variables['time_tag'][:],
+                           'A_AVG' :nc.variables['A_AVG'][:],
+                          'B_AVG' :nc.variables['B_AVG'][:]
+                              })
+            nc.close()
+            data=pd.concat([data, tmp], ignore_index=True)
+            label='XRS long wavelength channel irradiance (0.1-0.8 nm)'
+            unit=r'$W/m^2$'
+    else:
+        print('Canceled.')
+    return [data,label,unit]
+
+def read_goes_proton(filenames=[]):
+    print('Starting... read_goes_proton.')
+    if not(filenames):
+        filenames=easygui.fileopenbox(msg='Open GOES proton .cdf mydata.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
+    else:
+        pass
+    data=pd.DataFrame(index=[], columns=['time','P1W','P2W','P3W','P4W','P5W','P6W','P7W'])
+    if filenames:
+        for filename in filenames:
+            print filename.encode('utf-8')
+            nc = netCDF4.Dataset(filename, 'r')
+            tmp=pd.DataFrame({ 'time':nc.variables['time_tag'][:],
+                       'P1W' :nc.variables['P1W_UNCOR_FLUX'][:],
+                      'P2W' :nc.variables['P2W_UNCOR_FLUX'][:]
+#                       'P3W' :nc.variables['P3W_UNCOR_FLUX'][:],
+#                       'P4W' :nc.variables['P4W_UNCOR_FLUX'][:],
+#                       'P5W' :nc.variables['P4W_UNCOR_FLUX'][:],
+#                       'P6W' :nc.variables['P6W_UNCOR_FLUX'][:],
+#                       'P7W' :nc.variables['P7W_UNCOR_FLUX'][:]
+                     })
+            nc.close()
+            data=pd.concat([data, tmp], ignore_index=True)
+            label=['p1A(2.5 MeV)','p2A(6.5 MeV)','p3A(11.6 MeV)','p4A(30.6 MeV)','p5A(63.1 MeV)','p6A(165 MeV)','p7A(433 MeV)']
+            unit = r'$p/(cm^2 s sr MeV)$'
+    else:
+        print('Canceled.')
+    return [data,label,unit]
