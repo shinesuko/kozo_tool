@@ -18,6 +18,12 @@ from scipy import signal
 import zipfile
 from scipy import interpolate
 import netCDF4
+import tarfile
+from PIL import Image
+from scipy.stats import linregress
+from scipy import stats
+import lmfit
+from tqdm import tqdm,tqdm_notebook
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -261,7 +267,7 @@ def add_SEE_data(filename=[]):
         formatted = '%03d' % int(data.irradiation['number'])
         ion=data.irradiation['ion'].values
         print(ion+formatted+'.mydata is seleced')
-        filenames_SEE=easygui.fileopenbox(msg='Open '+ion+formatted+' SEE data.', title=None, default='*', filetypes=['*.jpg','*.png'], multiple=True)
+        filenames_SEE=easygui.fileopenbox(msg='Open '+ion+formatted+' SEE data.', title=None, default='*', filetypes=['*.png','*.jpg'], multiple=True)
         if filenames_SEE:
             data.SEE=pd.DataFrame(index=[], columns=['DateTime'])
             if 'SEE' in data.field:
@@ -447,6 +453,69 @@ def add_figure(filename=[],show=False,html=False,png=False,eps=False,add_data=Fa
         pass
     print('End of add_figure.')
 
+def add_figure_w_SET(filename=[],show=False,html=False,png=False,eps=False,add_data=False,fix_time=False,ymin=1E-6,ymax=1E-1,yscale='log',edge_detection=False):
+    print('Starting... add_figure.')
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open mydata to add figure.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
+    else:
+        pass
+    if filename:
+        data=load_data(filename=filename)
+        print('Reading... '+filename.encode('utf-8'))
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        # fig=plt.figure(facecolor ="#FFFFFF")
+        plt.style.use('classic')
+
+        ax1=fig.add_axes((0,0,1,0.75))
+        ax2=fig.add_axes((0,0.8,1,0.2),sharex=ax1)
+        # ax1.plot(data.current.DateTime,data.current['VDD33[I]'],label='VDD33')
+        # ax1.plot(data.current.DateTime,data.current['VDD18[I]'],label='VDD18')
+        # ax1.plot(data.current.DateTime,data.current['VDD[I]'],label='VDD')
+        ax1.plot(data.current.sort_values(by=["DateTime"], ascending=True).DateTime,data.current.sort_values(by=["DateTime"], ascending=True)['VDD33[I]'],label='VDD33')
+        ax1.plot(data.current.sort_values(by=["DateTime"], ascending=True).DateTime,data.current.sort_values(by=["DateTime"], ascending=True)['VDD18[I]'],label='VDD18')
+        ax1.plot(data.current.sort_values(by=["DateTime"], ascending=True).DateTime,data.current.sort_values(by=["DateTime"], ascending=True)['VDD[I]'],label='VDD')
+        if 'SET' in dir(data):
+            for i in range(1,9,1):
+                for time in data.SET.time[data.SET.error=='SMUX_OUT'+str(i)]:
+                    ax2.scatter(time,i)
+            for time in data.SET.time[data.SET.error=='other']:
+                    ax2.scatter(time,9)
+        else:
+            pass
+
+        ax1.axvspan(xmin=data.irradiation.irradiation_start.values[0],xmax=data.irradiation.irradiation_end.values[0],alpha=0.1)
+
+        ax1.set_yscale('log')
+        ax1.set_ylim([0.001,0.1])
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        ax1.grid()
+        ax2.tick_params(labelsize=8,labelbottom='off')
+        ax2.grid()
+        ax2.set_yticks(range(1,10,1))
+        ax2.set_yticklabels(labels=['SMUX_OUT1','SMUX_OUT2','SMUX_OUT3','SMUX_OUT4','SMUX_OUT5','SMUX_OUT6','SMUX_OUT7','SMUX_OUT8','other'])
+        # ax2.tick_params(labelleft='off')
+        ax2.set_ylim([0,10])
+        ax1.legend(loc=4)
+        plt.title(data.irradiation.ion.values[0]+'{0:03d}'.format(data.irradiation.number.values[0]))
+        ax1.set_xlabel('Time')
+        ax1.set_ylabel('Current [A]')
+        # plt.tight_layout()  # タイトルの被りを防ぐ
+        #save figure as png
+        #     plt.tight_layout()
+        if show:
+            plt.show()
+        else:
+            pass
+
+        fig.savefig(filename[0:-7]+'.png',format='png',dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        # fig.savefig(filename[0:-7]+'.png',format='png')
+        plt.clf()
+        print('Saving... .png format.')
+        print('End of add_figure_w_SET.')
+    else:
+        pass
+
 def update_irradiation_data(filename=[]):
     print('Starting... update_irradiation_data.')
     if not(filename):
@@ -491,12 +560,15 @@ def update_all_irradiation_data():
     else:
         print('Canceled.')
 
-def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True,fix_time=True,ymin=1E-6,ymax=1E-1,yscale='log'):
+def data2figure(filename=[],show=False,html=True,png=True,eps=False,add_data=True,fix_time=True,ymin=1E-6,ymax=1E-1,yscale='log',SET=True):
     print('Starting... data2figure.')
     filenames=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
     if filenames:
         for filename in filenames:
-            add_figure(filename=filename,show=show,html=html,png=png,eps=eps,add_data=add_data,fix_time=fix_time,ymin=ymin,ymax=ymax,yscale=yscale)
+            if SET:
+                add_figure_w_SET(filename=filename,show=show)
+            else:
+                add_figure(filename=filename,show=show,html=html,png=png,eps=eps,add_data=add_data,fix_time=fix_time,ymin=ymin,ymax=ymax,yscale=yscale)
     else:
         print('Canceled.')
     print('End of... data2figure.')
@@ -630,10 +702,13 @@ def plot_alpha(df,label=''):
     # plt.xlim([0,1.2])
     plt.show()
 
-def read_SRIM(thick=0.2):
+def read_SRIM(thick=0.2,filename1="",filename2=""):
     #すべてのSRIM outputには対応していない
-    filename1=easygui.fileopenbox(msg='Open ion in Gold file', title=None, default='*', multiple=False)
-    filename2=easygui.fileopenbox(msg='Open ion in Silicon file', title=None, default='*', multiple=False)
+    if filename1=="":
+        filename1=easygui.fileopenbox(msg='Open ion in Gold file', title=None, default='*', multiple=False)
+        filename2=easygui.fileopenbox(msg='Open ion in Silicon file', title=None, default='*', multiple=False)
+    else:
+        pass
     print filename1.encode('utf-8')
     print filename2.encode('utf-8')
 
@@ -712,16 +787,20 @@ def read_SRIM(thick=0.2):
 
     return [df1,df2,df3,df4]
 
-def SRIM():
-    filename=easygui.fileopenbox()
-    print filename.encode('utf-8')
+def SRIM(filename=[]):
+    if filename==[]:
+        filename=easygui.fileopenbox()
+    else:
+        print filename.encode('utf-8')
     #すべてのSRIM outputには対応していない
     col_names = ['Energy','Energy_unit','de/dx_elec','dE/dx_nuc','Range','Range_unit','Longitudinal_straggling','Longitudinal_straggling_unit','Lateral_straggling','Lateral_straggling_unit','A']
     df=pd.read_csv(filename,sep=' ',header='infer',skiprows=24,skipinitialspace=True,skipfooter=13,names=col_names)
     del df['A']
     df['Energy'][df['Energy_unit']=='keV']=df['Energy'][df['Energy_unit']=='keV'].copy()/1000
+    df['Energy'][df['Energy_unit']=='GeV']=df['Energy'][df['Energy_unit']=='GeV'].copy()*1000
     # df['Energy_unit'][df['Energy_unit']=='keV']='MeV'
     df['Range'][df['Range_unit']=='A']=df['Range'][df['Range_unit']=='A'].copy()/10000
+    df['Range'][df['Range_unit']=='mm']=df['Range'][df['Range_unit']=='mm'].copy()*1000
     # df['Range_unit'][df['Range_unit']=='A']='um'
     df['Range_invert']= -df['Range']+df['Range'].iloc[-1]
 
@@ -761,17 +840,23 @@ def SRIM():
 
     return df,result
 
-def plot_waveform(filename=[]):
+def plot_waveform(filename=[],option=False):
     if not(filename):
         filename=easygui.fileopenbox()
     else:
         pass
     if filename:
-        print filename.encode('utf-8')
+        if option:
+            print filename.encode('utf-8')
+        else:
+            pass
         names=['t','XOR','CLK','SMUX_IN','SMUX_OUT8','SMUX_OUT7','SMUX_OUT6','SMUX_OUT5','SMUX_OUT4','SMUX_OUT3','SMUX_OUT2','SMUX_OUT1']
         df=pd.read_csv(filename,sep='\t',skiprows=22,names=names)
         if len(df.index) == 0:
-            print u'blank file!'
+            if option:
+                print u'blank file!'
+            else:
+                pass
         else:
             dt0=8.000000E-10 #delta t for XOR
             dt1=2.000000E-9  #delta t for degital signal
@@ -888,7 +973,11 @@ def plot_waveform(filename=[]):
             plt.xlim(xlim)
             # plt.show()
             fig.savefig(filename[0:-4]+'.png',format='png',dpi=300)
-            print('Saving... .png format.')
+            if option:
+                print('Saving... .png format.')
+            else:
+                pass
+            plt.close(fig)
             plt.clf()
 
         return [df,filename]
@@ -899,7 +988,7 @@ def plot_waveform(filename=[]):
 
 def plot_waveform_auto():
     filenames=easygui.fileopenbox(msg='Select waveform data.', title=None, default='*', filetypes=['*.csv'], multiple=True)
-    for filename in filenames:
+    for filename in tqdm_notebook(filenames):
         plot_waveform(filename=filename)
     print 'finish!'
 
@@ -1014,6 +1103,7 @@ def analyse_waveform_auto():
     # print df.error_mode.value_counts()
     # print os.path.dirname(filename)[-5:]
     df.to_csv('C:/Users/14026/Desktop/'+os.path.dirname(filename)[-5:]+'.csv')
+    print 'saved at'+'C:/Users/14026/Desktop/'+os.path.dirname(filename)[-5:]+'.csv'
     print 'finish!'
     print df.pivot_table(values = 'duration',
                index = ['error_mode'], columns = ['error'],
@@ -1061,7 +1151,7 @@ def add_SET_data(filename=[]):
 def read_goes_Xray(filenames=[]):
     print('Starting... read_goes_Xray.')
     if not(filenames):
-        filenames=easygui.fileopenbox(msg='Open GOES Xray  .cdf mydata.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
+        filenames=easygui.fileopenbox(msg='Open GOES Xray  .cdf files.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
     else:
         pass
     data=pd.DataFrame(index=[], columns=['time','A_AVG','B_AVG'])
@@ -1084,7 +1174,7 @@ def read_goes_Xray(filenames=[]):
 def read_goes_proton(filenames=[]):
     print('Starting... read_goes_proton.')
     if not(filenames):
-        filenames=easygui.fileopenbox(msg='Open GOES proton .cdf mydata.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
+        filenames=easygui.fileopenbox(msg='Open GOES proton .cdf files.', title=None, default='*', filetypes=['*.cdf'], multiple=True)
     else:
         pass
     data=pd.DataFrame(index=[], columns=['time','P1W','P2W','P3W','P4W','P5W','P6W','P7W'])
@@ -1108,3 +1198,1093 @@ def read_goes_proton(filenames=[]):
     else:
         print('Canceled.')
     return [data,label,unit]
+
+def read_SCi_data(filenames=[]):
+    print('Starting... read_SCi_data.')
+    if not(filenames):
+        filenames=easygui.fileopenbox(msg='Open SCi .tar files.', title=None, default='*', filetypes=['*.tar'], multiple=True)
+    else:
+        pass
+    #空のDataframe作成
+    error = pd.DataFrame([], columns=['ALOS_2','SF_BSRAM_1BIT_ERR_CNT','SF_BSRAM_2BIT_ERR_CNT','SF_D-CACHE_ERR_CNT','SF_IN-CACHE_ERR_CNT','SF_OTHER_ERR_CNT'])
+    if filenames:
+        for file in filenames:
+            print file.encode('utf-8')
+            ## tar/tar.gz/tar.bz2ファイルを読む
+            tf = tarfile.open(file, 'r')
+            ## ファイル情報(tarinfo)をすべて取り出す
+            for ti in tf:
+                print ti.name
+                t = tf.getmember(ti.name)
+                tmp=pd.read_table(tf.extractfile(t)\
+                        ,sep=',',skiprows=4,index_col=[0],\
+                        names=['time','ALOS_2','SF_BSRAM_1BIT_ERR_CNT','SF_BSRAM_2BIT_ERR_CNT','SF_D-CACHE_ERR_CNT','SF_IN-CACHE_ERR_CNT','SF_OTHER_ERR_CNT'])
+            error=pd.concat([error,tmp])
+
+    else:
+        print('Canceled.')
+    error.index=pd.to_datetime(error.index)
+    error.index.name='time'
+    return error
+
+def count_SET(filename=[]):
+    print('Starting... count_SET.')
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open bmp file.', title=None, default='*', filetypes=['*.bmp'], multiple=False)
+    else:
+        pass
+
+    if filename:
+        print filename.encode('utf-8')
+        im = Image.open(filename)
+        gray=np.array(im.crop((353,0,905,552)).convert('L'))
+        num=np.round(len(gray[gray>128])/5.52/5.52)
+        print num
+
+    else:
+        pass
+
+    return [num,gray]
+
+def read_IV(filename=[],type='IdVg',show_Vt=False,absolute=True,scale='log',ylim=[1e-12,1e-2],png=True,eps=False,show=True,option=True,comment='',device='NMOS',length=100,place='0,0',width=100):
+    L=length
+    W=width
+    if option:
+        print('Starting... read_IdVg.')
+    else:
+        pass
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open .txt file.', title=None, default='*', filetypes=['*.txt'], multiple=False)
+    else:
+        pass
+    if filename:
+        if option:
+            print filename.encode('utf-8')
+        else:
+            pass
+        df=pd.read_csv(filename, sep='\t',skiprows=15)
+        header=pd.read_csv(filename, sep='\t',nrows=7,skiprows=4,names=['item','value'])
+        name=[]
+        for i in ['Is','Ig','Id','Isub']:
+            for j in np.arange(1,(len(df.columns)-1)/4+1,1):
+        #         print i+'_'+str(j)
+                # print (header.value[5]-header.value[4])/(header.value[6]-1)*j
+                if type=='IdVg':
+                    name.append(i+'@Vd='+str(header.value[4]+header.value[5]*(j-1))+'V')
+                else:
+                    name.append(i+'@Vg='+str(header.value[4]+header.value[5]*(j-1))+'V')
+        name.append('dummy')
+        df=pd.read_csv(filename, sep='\t',skiprows=16,names=name)
+        del df['dummy']
+        df.index.name='V'
+        if show_Vt&(type=='IdVg'):
+            try:
+                # select Is to calc Vt
+                if device=='NMOS':
+                    x1=np.abs(df.ix[(np.abs(df.ix[:,0])>=W/L*1e-6),0]).head(1).index.values[0]
+                    x2=np.abs(df.ix[np.abs(df.ix[:,0])<W/L*1e-6,0]).tail(1).index.values[0]
+                    y1=np.abs(df.ix[(np.abs(df.ix[:,0])>=W/L*1e-6),0]).head(1).values[0]
+                    y2=np.abs(df.ix[np.abs(df.ix[:,0])<W/L*1e-6,0]).tail(1).values[0]
+                    Vt=(x2-x1)/(y2-y1)*(W/L*1e-6-y2)+x2
+                else:
+                    x1=df.ix[(df.ix[:,0]>=W/L*1e-6),0].head(1).index.values[0]
+                    x2=df.ix[df.ix[:,0]<W/L*1e-6,0].tail(1).index.values[0]
+                    y1=df.ix[(df.ix[:,0]>=W/L*1e-6),0].head(1).values[0]
+                    y2=df.ix[df.ix[:,0]<W/L*1e-6,0].tail(1).values[0]
+                    Vt=(x2-x1)/(y2-y1)*(W/L*1e-6-y2)+x2
+                if option:
+                    print 'Vt='+str(Vt)+ ' [V]'
+                else:
+                    pass
+            except:
+                Vt=0
+                if option:
+                    print 'Can not calculate Vt.'
+                else:
+                    pass
+        else:
+            Vt=0
+            if option:
+                print 'Vt was not calculated.'
+            else:
+                pass
+        n=(len(df.columns))/4
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(10,10))
+        plt.style.use('classic')
+        #leftTop
+        plt.subplot(2,2,1)
+        for i in np.arange(0,n,1):
+            if absolute:
+                plt.plot(df.index,abs(df.ix[:,i]),'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+            else:
+                plt.plot(df.index,df.ix[:,i],'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+        plt.yscale(scale)
+        plt.ylim(ylim)
+        # plt.xlim([0,10])
+        # plt.xlabel(r'$Vg [V]$')
+        plt.ylabel(r'$Is [A]$')
+        if type=='IdVg':
+            # plt.title('Is-Vg')
+            plt.xlabel(r'$Vg [V]$')
+            plt.legend(loc=3,fontsize=10)
+        else:
+            # plt.title('Is-Vd')
+            plt.xlabel(r'$Vd [V]$')
+            plt.legend(loc=1,fontsize=10)
+        if show_Vt:
+            plt.axhline(W/L*1e-6, linestyle='dashed', linewidth=1)
+            plt.axvline(Vt, linestyle='dashed', linewidth=1)
+        else:
+            pass
+        plt.grid()
+        #RightTop
+        plt.subplot(2,2,2)
+        for i in np.arange(0+n,n+n,1):
+            if absolute:
+                plt.plot(df.index,abs(df.ix[:,i]),'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+            else:
+                plt.plot(df.index,df.ix[:,i],'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+        plt.yscale(scale)
+        plt.ylim(ylim)
+        # plt.xlim([0,10])
+        plt.xlabel(r'$Vg [V]$')
+        plt.ylabel(r'$Ig [A]$')
+        if type=='IdVg':
+            # plt.title('Ig-Vg')
+            plt.xlabel(r'$Vg [V]$')
+            plt.legend(loc=3,fontsize=10)
+        else:
+            # plt.title('Id-Vd')
+            plt.xlabel(r'$Vd [V]$')
+            plt.legend(loc=1,fontsize=10)
+        plt.grid()
+        #LeftBottom
+        plt.subplot(2,2,3)
+        for i in np.arange(0+2*n,n+2*n,1):
+            if absolute:
+                plt.plot(df.index,abs(df.ix[:,i]),'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+            else:
+                plt.plot(df.index,df.ix[:,i],'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+        plt.yscale(scale)
+        plt.ylim(ylim)
+        # plt.xlim([0,10])
+        plt.xlabel(r'$Vg [V]$')
+        plt.ylabel(r'$Id [A]$')
+        if type=='IdVg':
+            # plt.title('Id-Vg')
+            plt.xlabel(r'$Vg [V]$')
+            plt.legend(loc=3,fontsize=10)
+        else:
+            # plt.title('Id-Vd')
+            plt.xlabel(r'$Vd [V]$')
+            plt.legend(loc=1,fontsize=10)
+        if show_Vt&(type=='IdVg'):
+            plt.axhline(W/L*1e-6, linestyle='dashed', linewidth=1)
+            plt.axvline(Vt, linestyle='dashed', linewidth=1)
+        else:
+            pass
+        plt.grid()
+        #RightBottom
+        plt.subplot(2,2,4)
+        for i in np.arange(0+3*n,n+3*n,1):
+            if absolute:
+                plt.plot(df.index,abs(df.ix[:,i]),'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+            else:
+                plt.plot(df.index,df.ix[:,i],'o-',markersize=5, markeredgecolor=None,alpha=0.5,markeredgewidth=0)
+        plt.yscale(scale)
+        plt.ylim(ylim)
+        # plt.xlim([0,10])
+        plt.xlabel(r'$Vg [V]$')
+        plt.ylabel(r'$Isub [A]$')
+        if type=='IdVg':
+            # plt.title('Id-Vg')
+            plt.xlabel(r'$Vg [V]$')
+            plt.legend(loc=3,fontsize=10)
+        else:
+            # plt.title('Id-Vd')
+            plt.xlabel(r'$Vd [V]$')
+            plt.legend(loc=1,fontsize=10)
+        plt.grid()
+        plt.suptitle(comment+'_L='+str(length),fontsize=20)
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.90)
+        if show:
+            plt.show()
+        else:
+            pass
+        #save figure as png
+        if png:
+            fig.savefig(filename[0:-4]+'.png',format='png',dpi=300)
+            if option:
+                print('Saving... .png format.')
+            else:
+                pass
+        else:
+            pass
+        #save as eps
+        if eps:
+            fig.savefig(filename[0:-4]+'.eps',format='eps',dpi=300)
+            if option:
+                print('Saving... .eps format.')
+            else:
+                pass
+        else:
+            pass
+        plt.close(fig)
+        plt.clf()
+
+        # df modify
+        df.columns=['Is','Ig','Id','Isub']
+        df['condition']=header.value[4]
+        df['device']=device
+        df['filename']=filename
+        df['length']=length
+        df['type']=type
+        df['Vt']=Vt
+        df['V']=df.index
+        df['place']=place
+    else:
+        pass
+    return [df,header,Vt]
+
+def read_IV_minimal(filename=[],type='IdVg',option=True):
+    if option:
+        print('Starting... read_IV_minimal.')
+    else:
+        pass
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open .csv file.', title=None, default='*', filetypes=['*.csv'], multiple=False)
+    else:
+        pass
+    if filename:
+        if option:
+            print filename.encode('utf-8')
+        else:
+            pass
+        if type=='IdVg':
+            df=pd.read_csv(filename, skiprows=229,names=['DataName','Vg','Vd','Id','absId'])
+            del df['DataName']
+        elif type=='IdVgwIg':
+            df=pd.read_csv(filename, skiprows=229,names=['Vg','Vd','Ib','Id','Ig','Is','absId'],usecols=[1,2,3,4,5,6,7])
+        else:
+            df=pd.read_csv(filename, skiprows=229,names=['DataName','Vd','Vg','Id'])
+            del df['DataName']
+    else:
+        pass
+
+    return df
+
+def plot_IV_minimal(df,type='IdVg',device='NMOS',show_fig=False,save_fig=True,place='',process='',wafer='',length=10,filename=[]):
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(5,5))
+    plt.style.use('classic')
+    if type=='IdVg':
+        for condition in df.Vd.unique():
+            plt.plot(df.Vg[df.Vd==condition],np.abs(df.Id)[df.Vd==condition],label='Vd='+str(condition)+' [V]')
+        plt.grid()
+        plt.yscale('log')
+        plt.ylabel('Id [A]')
+        plt.xlabel('Vg [V]')
+        if device=='NMOS':
+            plt.legend(loc=4,fontsize=10)
+        else:
+            plt.legend(loc=1,fontsize=10)
+    elif type=='IdVgwIg':
+        plt.rcParams["font.size"] = 8
+        plt.rcParams['font.family'] = 'Times New Roman' #全体のフォントを設定
+        # font = {'family' : 'normal',
+        # 'weight' : 'normal',
+        # 'size'   : 5}
+        #
+        # matplotlib.rc('font', **font)
+        ax_Id=plt.subplot2grid((2,2),(0,0))
+        ax_Ig=plt.subplot2grid((2,2),(0,1))
+        ax_Is=plt.subplot2grid((2,2),(1,0))
+        ax_Ib=plt.subplot2grid((2,2),(1,1))
+
+        for Vd in [-1,-0.05]:
+            ax_Id.plot(df.Vg[df.Vd==Vd],np.abs(df.Id[df.Vd==Vd]),'o-',label='Vd={} [V]'.format(Vd),alpha=0.5,markersize=3)
+        ax_Id.set_yscale('log')
+        ax_Id.grid()
+        ax_Id.set_ylabel('Id')
+        ax_Id.set_xlabel('Vg')
+        ax_Id.legend(fontsize=5)
+        ax_Id.set_ylim([1e-14,1e-3])
+        plt.tight_layout()
+
+        for Vd in [-1,-0.05]:
+            ax_Ig.plot(df.Vg[df.Vd==Vd],np.abs(df.Ig[df.Vd==Vd]),'o-',label='Vd={} [V]'.format(Vd),alpha=0.5,markersize=3)
+        ax_Ig.set_yscale('log')
+        ax_Ig.grid()
+        ax_Ig.set_ylabel('Ig')
+        ax_Ig.set_xlabel('Vg')
+        ax_Ig.set_ylim([1e-14,1e-3])
+        ax_Ig.legend(fontsize=5)
+        plt.tight_layout()
+
+        for Vd in [-1,-0.05]:
+            ax_Is.plot(df.Vg[df.Vd==Vd],np.abs(df.Is[df.Vd==Vd]),'o-',label='Vd={} [V]'.format(Vd),alpha=0.5,markersize=3)
+        ax_Is.set_yscale('log')
+        ax_Is.grid()
+        ax_Is.set_ylabel('Is')
+        ax_Is.set_xlabel('Vg')
+        ax_Is.set_ylim([1e-14,1e-3])
+        ax_Is.legend(fontsize=5)
+        plt.tight_layout()
+
+        for Vd in [-1,-0.05]:
+            ax_Ib.plot(df.Vg[df.Vd==Vd],np.abs(df.Ib[df.Vd==Vd]),'o-',label='Vd={} [V]'.format(Vd),alpha=0.5,markersize=3)
+        ax_Ib.set_yscale('log')
+        ax_Ib.grid()
+        ax_Ib.set_ylabel('Ib')
+        ax_Ib.set_xlabel('Vg')
+        ax_Ib.set_ylim([1e-14,1e-3])
+        ax_Ib.legend(fontsize=5)
+        plt.tight_layout()
+
+        # plt.tight_layout()
+
+
+
+    elif type=='IdVd':
+        plt.grid()
+        plt.ylabel('Id [A]')
+        plt.xlabel('Vd [V]')
+        if device=='NMOS':
+            for condition in np.round(df.Vg.unique()[df.Vg.unique()>=0],decimals=3):
+                plt.plot(df.Vd[df.Vg==condition],np.abs(df.Id)[df.Vg==condition],label='Vg='+str(condition)+' [V]')
+            plt.legend(loc=2,fontsize=6)
+        else:
+            for condition in np.round(df.Vg.unique()[df.Vg.unique()<=0],decimals=3):
+                plt.plot(df.Vd[df.Vg==condition],np.abs(df.Id)[df.Vg==condition],label='Vg='+str(condition)+' [V]')
+            plt.legend(loc=1,fontsize=6)
+
+    else:
+        pass
+    if type=='IdVgwIg':
+        # plt.suptitle('{0}_wafer{1}_{2}_{3}_L={4}um_{5}'.format(process,wafer,place,device,length,type))
+        # plt.subplots_adjust(top=0.5)
+        plt.tight_layout()
+    else:
+        plt.title('{0}_wafer{1}_{2}_{3}_L={4}um_{5}'.format(process,wafer,place,device,length,type),fontsize=10)
+
+    # plt.tight_layout()
+    if save_fig:
+        plt.savefig(filename[0:-4]+'.png',format='png',dpi=300)
+    if show_fig:
+        plt.show()
+    plt.close(fig)
+    plt.clf()
+
+def calc_Vt(df,option=False,device='NMOS',show_fig=False):
+    """
+    fuction of Vt calculation. Besed on Id equation in saturation region.
+    lower:peak of grad(sqrt(Id))
+    upper:peak of grad(Id)
+    """
+    if device=='NMOS':
+        lower=df.V[np.sqrt(df.Id).diff().argmax()]
+        upper=df.V[df.Id.diff().argmax()]
+        Gm_max=df.Id.diff().max()
+        y=df.Id[(lower<df.V)&(df.V<upper)]
+        x=df.V[(lower<df.V)&(df.V<upper)]
+        # print lower,upper,x,y
+        slope, intercept, r_value, _, _ = stats.linregress(x, y)
+        Vt=-intercept/slope
+    else:
+        upper=df.V[np.sqrt(np.abs(df.Id)).diff().argmax()]
+        lower=df.V[np.abs(df.Id).diff().argmax()]
+        Gm_max=np.abs(df.Id).diff().max()
+        y=np.abs(df.Id)[(lower<df.V)&(df.V<upper)]
+        x=df.V[(lower<df.V)&(df.V<upper)]
+        # print lower,upper,x,y
+        slope, intercept, r_value, _, _ = stats.linregress(x, y)
+        Vt=-intercept/slope
+    if option:
+        print '****************Vt calculation**********************'
+        print 'Reference V region between [{0},{1}]'.format(lower,upper)
+        print 'Vt={:.3f} [V]'.format(Vt)
+        print 'Gm={:.3e} [S]'.format(Gm_max)
+        print '****************Vt calculation**********************'
+    if show_fig:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(5,5))
+        plt.style.use('classic')
+        plt.plot(df.V,np.abs(df.Id),label='input')
+        if device=='NMOS':
+            t=np.arange(0,5,0.1)
+        else:
+            t=np.arange(-5,0,0.1)
+        plt.plot(t,slope*t+intercept,label='fit')
+        plt.grid()
+        plt.yscale('linear')
+        # plt.xlim([0,2])
+        # plt.gca().set_ylim()
+        # plt.gca().set_ylim(bottom=0)
+        plt.ylabel('Id [A]')
+        plt.xlabel('Vg [V]')
+        plt.legend(fontsize=10)
+        left, bottom, width, height = [0.5, 0.25, 0.3, 0.3]
+        ax2 = fig.add_axes([left, bottom, width, height])
+        ax2.grid()
+        ax2.tick_params(axis='both', which='major', labelsize=5)
+        if device=='NMOS':
+            ax2.plot(df.V[(0<df.V)&(df.V<1.5)],df.Id[(0<df.V)&(df.V<1.5)],label='input')
+        else:
+            ax2.plot(df.V[(-1.5<df.V)&(df.V<0)],np.abs(df.Id)[(-1.5<df.V)&(df.V<0)],label='input')
+        t=np.arange(Vt-0.5,Vt+0.5,0.05)
+        ax2.plot(t,slope*t+intercept,label='fit')
+        ax2.set_ylim(bottom=0)
+        ax2.set_xlim([Vt-0.5,Vt+0.5])
+        plt.show()
+    return [Vt,slope,intercept,Gm_max]
+
+def calc_Vt_lapis(df,option=False,device='NMOS',L=10,W=100,show_fig=False):
+    """
+    fuction of Vt calculation. Besed on lapis semiconductor method.
+    Reference Id is W/L*1e-7 [A].
+    """
+    ref=1e-7
+    if device=='NMOS':
+        x1=df.V[np.abs(df.Id)>=W/L*ref].head(1).values[0]
+        x2=df.V[np.abs(df.Id)<W/L*ref].tail(1).values[0]
+        y1=df.Id[df.V[np.abs(df.Id)>=W/L*ref].head(1).index.values[0]]
+        y2=df.Id[df.V[np.abs(df.Id)<W/L*ref].tail(1).index.values[0]]
+        Vt=(x2-x1)/(y2-y1)*(W/L*ref-y2)+x2
+    else:
+        x1=df.V[np.abs(df.Id)>=W/L*ref].head(1).values[0]
+        x2=df.V[np.abs(df.Id)<W/L*ref].tail(1).values[0]
+        y1=np.abs(df.Id)[df.V[np.abs(df.Id)>=W/L*ref].head(1).index.values[0]]
+        y2=np.abs(df.Id)[df.V[np.abs(df.Id)<W/L*ref].tail(1).index.values[0]]
+        Vt=(x2-x1)/(y2-y1)*(W/L*ref-y2)+x2
+    if option:
+        print '****************Vt(lapis) calculation***************'
+        print 'x1={0},x2={1},y1={2},y2={3}'.format(x1,x2,y1,y2)
+        print 'W={0}\nL={1}'.format(W,L)
+        print 'Reference Id was {:.2e} [A]'.format(W/L*ref)
+        print 'Vt={:.3f} [V]'.format(Vt)
+        print '****************Vt(lapis) calculation***************'
+    if show_fig:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(5,5))
+        plt.style.use('classic')
+        plt.plot(df.V,np.abs(df.Id),label='input')
+        plt.axhline(W/L*ref,linestyle='--')
+        plt.axvline(Vt,linestyle='--')
+        plt.grid()
+        plt.yscale('log')
+        # plt.xlim([0,Vt])
+        plt.ylabel('Id [A]')
+        plt.xlabel('Vg [V]')
+        plt.legend(fontsize=10)
+        plt.show()
+    return Vt
+
+def calc_SS(df,Vt=1,option=False,device='NMOS',show_fig=False):
+    """
+    fuction of S.S.(subthreshold slope in mV/decade) calculation. Besed on Id equation in subthreshold region.
+    lower:peak of grad(sqrt(Id))
+    upper:peak of grad(Id)
+    """
+    if device=='NMOS':
+        def exponential(x,A,x0,B):
+            return A*np.exp(B*(x-x0))
+        model=lmfit.Model(exponential)
+        params = model.make_params()
+        params.add('A', value=df.Id[(0<=df.V)&(df.V<Vt)].mean(), min=0, max=np.inf)
+        params.add('x0', value=Vt, min=0, max=np.inf)
+        params.add('B', value=10.0, min=0, max=np.inf)
+        x=df.V[(0<=df.V)&(df.V<Vt)]
+        y=df.Id[(0<=df.V)&(df.V<Vt)]
+        # print df.V[(df.V<Vt)],df.Id[(df.V<Vt)]
+        # print x,y
+        fit = model.fit(y, params, x=x,fit_kws={'nan_policy':'omit'})
+        SS=1.0/fit.best_values['B']*1000*np.log(10)
+    else:
+        def exponential(x,A,x0,B):
+            return A*np.exp(B*(x-x0))
+        model=lmfit.Model(exponential)
+        params = model.make_params()
+        params.add('A', value=np.mean(np.abs(df.Id)[(Vt/2<df.V)&(df.V<0)]), min=0, max=np.inf)
+        params.add('x0', value=Vt, min=-np.inf, max=0)
+        params.add('B', value=-10.0, min=-np.inf, max=0)
+        x=df.V[(Vt/2<df.V)&(df.V<0)]
+        y=np.abs(df.Id)[(Vt/2<df.V)&(df.V<0)]
+        # print x,y
+        fit = model.fit(y, params, x=x,fit_kws={'nan_policy':'omit'})
+        SS=1.0/fit.best_values['B']*1000*np.log(10)
+    if option:
+        print '****************SS calculation**********************'
+        print fit.fit_report()
+        print 'Subthreshold slope={:.3f} [mV/decade]'.format(SS)
+        print '****************SS calculation**********************'
+    if show_fig:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(5,5))
+        plt.style.use('classic')
+        plt.plot(df.V,np.abs(df.Id),'o-',alpha=0.5,label='input')
+        if device=='NMOS':
+            t=np.arange(0.5,2,0.1)
+        else:
+            t=np.arange(Vt/2,0,0.01)
+        plt.plot(t,exponential(t,**fit.values),'-',label='fit')
+        plt.grid()
+        plt.yscale('log')
+        # plt.xlim([Vt,0])
+        plt.ylabel('Id [A]')
+        plt.xlabel('Vg [V]')
+        plt.legend(fontsize=10)
+        plt.show()
+    return [SS,fit]
+
+def read_CV(filename=[],show=True,png=True,eps=False,option=True):
+    if option:
+        print('Starting... read_CV.')
+    else:
+        pass
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open .csv file.', title=None, default='*', filetypes=['*.csv'], multiple=False)
+    else:
+        pass
+    df=[]
+    if filename:
+        if option:
+            print filename.encode('utf-8')
+        else:
+            pass
+        df=pd.read_csv(filename, sep='\s+',names=['V', 'C'],skiprows=2,skip_footer=1,engine='python')
+        Cmax=max(df.C)
+        Cmin=min(df.C)
+        index=np.argmax((df.C/df.C.tail(1).values[0]).rolling(window=3, min_periods=3).mean().diff())
+        x = df.V[index-3:index+3]
+        y = (df.C/df.C.tail(1).values[0])[index-3:index+3]
+        slope,intercept,rvalue,pvalue,stderr=linregress(x,y) #x and y are arrays or lists.
+        Vth=(Cmin/Cmax-intercept)/slope
+        param=pd.DataFrame({ 'Cmin' : [Cmin],
+                        'Cmax' : [Cmax],
+                        'Vth' : [Vth]})
+
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        plt.style.use('classic')
+        plt.plot(df.V,df.C/df.C.tail(1).values[0],'o')
+        plt.plot(df.V,slope*df.V+intercept,'g')
+        plt.axvline(Vth)
+        # plt.yscale('log')
+        plt.ylim([0,1.2])
+        plt.xlabel(r'$Voltage [V]$')
+        plt.ylabel(r'$C/C_{ox}$')
+        plt.grid()
+        plt.tight_layout()
+        if show:
+            plt.show()
+        else:
+            pass
+        #save figure as png
+        if png:
+            fig.savefig(filename[0:-4]+'.png',format='png',dpi=300)
+            if option:
+                print('Saving... .png format.')
+            else:
+                pass
+        else:
+            pass
+        #save as eps
+        if eps:
+            fig.savefig(filename[0:-4]+'.eps',format='eps',dpi=300)
+            if option:
+                print('Saving... .eps format.')
+            else:
+                pass
+        else:
+            pass
+        plt.close(fig)
+        plt.clf()
+
+    else:
+        pass
+
+    return [df,param]
+
+
+def plot_SET_duration_by_channel(filename=[],type='HighToLow',yscale='log',ylim=[1e-9,1e-6]):
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        df= pd.DataFrame(index=[], columns=[])
+        for file in filenames:
+            tmp=load_data(filename=file)
+            # print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            df=pd.concat([df,tmp.SET],ignore_index=True)
+    else:
+        pass
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+    plt.style.use('classic')
+    plt.boxplot([df.duration[(df.error=='SMUX_OUT1') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT2') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT3') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT4') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT5') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT6') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT7') & (df.error_mode==type)],\
+                 df.duration[(df.error=='SMUX_OUT8') & (df.error_mode==type)],\
+                ], positions = range(1,9,1), widths = 0.6)
+    # bp_min = plt.boxplot([Xe147,Xe133,Xe135], positions = [2,4,6], widths = 0.6)
+    plt.yscale(yscale)
+    plt.ylim(ylim)
+    plt.grid()
+    plt.xlabel('SMUX_OUT [channel]')
+    plt.ylabel('duration [s]')
+    for (i,j) in zip(np.arange(0.75,8.75,1),np.arange(1,9,1)):
+        plt.text(i, 2e-9, 'n='+str(df.duration[df.error==('SMUX_OUT'+str(j))].count()))
+    # for i in range(1,9,1):
+    #     plt.xticks(range(1,9,1), label)
+    plt.show()
+    return [df,fig]
+
+def plot_SET_count(filename=[],type='HighToLow'):
+    #typ
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in typical condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        count_typ=list()
+        df_typ= pd.DataFrame(index=[], columns=[])
+        print 'Typ.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            count_typ.append(tmp.SET.id[tmp.SET.error_mode==type].count())
+            df_typ=pd.concat([df_typ,tmp.SET],ignore_index=True)
+    else:
+        pass
+    #min
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in minimum condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        count_min=list()
+        df_min= pd.DataFrame(index=[], columns=[])
+        print 'Min.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            count_min.append(tmp.SET.id[tmp.SET.error_mode==type].count())
+            df_min=pd.concat([df_min,tmp.SET],ignore_index=True)
+    else:
+        pass
+    error_min = np.sqrt(sum(count_min))
+    error_typ = np.sqrt(sum(count_typ))
+    label=['Typ','Min']
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+    plt.style.use('classic')
+    plt.bar(1.5, sum(count_min), width=0.5, align='center',yerr=error_min, ecolor="black", capsize=10,label='min',alpha=0.5)
+    plt.bar(0.5, sum(count_typ), width=0.5, align='center',yerr=error_typ, ecolor="black", capsize=10,label='typ',color='r',alpha=0.5)
+    # plt.xlabel('SET width [us]')
+    plt.ylabel('Counts')
+    plt.xlim([0,2])
+    plt.xticks([0.5,1.5], label)
+    plt.grid()
+    plt.legend(loc=0)
+    plt.title('SET pulse counts')
+    plt.show()
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+    plt.style.use('classic')
+    bp_typ = plt.boxplot([df_typ.duration[df_typ.error_mode==type]], positions = [0.5], widths = 0.6)
+    bp_min = plt.boxplot([df_min.duration[df_min.error_mode==type]], positions = [1.5], widths = 0.6)
+    ## change outline color, fill color and linewidth of the boxes
+    for box in bp_typ['boxes']:
+        # change outline color
+        box.set( color='r', linewidth=1)
+        # change fill color
+    #     box.set( facecolor = 'w' )
+    ## change color and linewidth of the whiskers
+    for whisker in bp_typ['whiskers']:
+        whisker.set(color='r', linewidth=1)
+    ## change color and linewidth of the caps
+    for cap in bp_typ['caps']:
+        cap.set(color='r', linewidth=1)
+    ## change color and linewidth of the medians
+    for median in bp_typ['medians']:
+        median.set(color='r', linewidth=1)
+
+    for box in bp_min['boxes']:
+    # change outline color
+        box.set( color='b', linewidth=1)
+    # change fill color
+    #     box.set( facecolor = 'w' )
+    ## change color and linewidth of the whiskers
+    for whisker in bp_min['whiskers']:
+        whisker.set(color='b', linewidth=1)
+    ## change color and linewidth of the caps
+    for cap in bp_min['caps']:
+        cap.set(color='b', linewidth=1)
+    ## change color and linewidth of the medians
+    for median in bp_min['medians']:
+        median.set(color='b', linewidth=1)
+
+    plt.xticks([0.5,1.5], label)
+    # plt.xlabel('SET width [us]')
+    plt.ylabel('SET width [u]')
+    plt.ylim([1e-9,1e-6])
+    plt.xlim([0,2])
+    plt.yscale('log')
+    plt.grid()
+    plt.title('SET pulse width')
+    plt.text(0.45, 2e-9, 'n='+str(df_typ.duration[df_typ.error_mode==type].count()))
+    plt.text(1.45, 2e-9, 'n='+str(df_min.duration[df_min.error_mode==type].count()))
+    plt.show()
+    return [count_typ,count_min]
+
+def plot_SET_interval(filename=[],type='HighToLow'):
+    #typ
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in typical condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        count_typ=list()
+        df_typ= pd.DataFrame(index=[], columns=[])
+        print 'Typ.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            count_typ.append(tmp.SET.id[tmp.SET.error_mode==type].count())
+            df_typ=pd.concat([df_typ,tmp.SET],ignore_index=True)
+    else:
+        pass
+    #min
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in minimum condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        count_min=list()
+        df_min= pd.DataFrame(index=[], columns=[])
+        print 'Min.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            count_min.append(tmp.SET.id[tmp.SET.error_mode==type].count())
+            df_min=pd.concat([df_min,tmp.SET],ignore_index=True)
+    else:
+        pass
+
+    interval_typ=df_typ.time[df_typ.error_mode==type].dropna().sort_values().diff().astype('timedelta64[s]').dropna()
+    interval_min=df_min.time[df_min.error_mode==type].dropna().sort_values().diff().astype('timedelta64[s]').dropna()
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+    plt.style.use('classic')
+    bins=np.linspace(0,50,50)
+    plt.hist(interval_typ,bins=bins,label='typ',color='r',alpha=0.5)
+    plt.hist(interval_min,bins=bins,label='min',color='b',alpha=0.5)
+
+    plt.ylabel('Counts')
+    plt.xlabel('SET interval [s]')
+    # plt.title('Hard-via-FPGA@CLK=10 MHz,input=0.01 Hz')
+    plt.grid()
+    plt.legend()
+    plt.show()
+
+def plot_SET_cross_section(filename=[],type='HighToLow'):
+    #typ
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in typical condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        df_typ= pd.DataFrame(index=[], columns=[])
+        Xsec_typ=list()
+        print 'Typ.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            df_typ=pd.concat([df_typ,tmp.SET],ignore_index=True)
+            Xsec_typ.extend((tmp.SET.time[tmp.SET.error_mode==type].dropna().sort_values().diff().astype('timedelta64[s]').dropna()*tmp.irradiation.flux.values[0])**-1)
+    else:
+        pass
+    #min
+    if not(filename):
+        filenames=easygui.fileopenbox(msg='Open .mydata to plot in minimum condition.', title=None, default='*', filetypes=['*.mydata'], multiple=True)
+    else:
+        pass
+
+    if filenames:
+        df_min= pd.DataFrame(index=[], columns=[])
+        Xsec_min=list()
+        print 'Min.'
+        for file in filenames:
+            tmp=load_data(filename=file)
+            print tmp.irradiation.ion.values[0]+'{0:03d}'.format(tmp.irradiation.number.values[0])
+            df_min=pd.concat([df_min,tmp.SET],ignore_index=True)
+            Xsec_min.extend((tmp.SET.time[tmp.SET.error_mode==type].dropna().sort_values().diff().astype('timedelta64[s]').dropna()*tmp.irradiation.flux.values[0])**-1)
+    else:
+        pass
+
+    fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+    plt.style.use('classic')
+    plt.subplot2grid((1,3),(0,0),colspan=2)
+    plt.boxplot([Xsec_min,Xsec_typ],positions=[2,1],widths=0.5)
+    plt.yscale('log')
+    plt.ylim([1E-8,1E-4])
+    plt.grid()
+    # plt.xlabel('$LET\ [MeV/(cm^2/mg)]$')
+    # plt.xlabel('Hard-via-FPGA@CLK=10 MHz,input=0.01 Hz')
+    plt.ylabel('$SET\ cross\ section\\rm[cm^2/device]$')
+    # plt.xticks(range(0,90,20),range(0,90,20))
+    plt.xticks([1,2],['typ n='+str(len(Xsec_typ)),'min n='+str(len(Xsec_min))])
+    plt.xlim([0,3])
+    plt.tight_layout()
+
+    plt.subplot2grid((1,3),(0,2))
+    plt.hist(Xsec_min,label='min',bins=np.logspace(-8,-4,num=50),normed=False,color='b',alpha=0.5,orientation='horizontal')
+    plt.hist(Xsec_typ,label='typ',bins=np.logspace(-8,-4,num=50),normed=False,color='r',alpha=0.5,orientation='horizontal')
+    plt.grid()
+    plt.yscale('log')
+    plt.ylim([1E-8,1E-4])
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    return [Xsec_min,Xsec_typ]
+
+def fig2svg(fig,path=u'C:/Users/14026/Desktop/',format='svg'):
+    fig.savefig(path+'image'+'.'+format,format=format)
+    print('Saving... '+format+' format at'+path)
+
+def pulse_test(filenames=[]):
+    duration = pd.DataFrame(index=[''], columns=[])
+    if not(filenames):
+        filenames=easygui.fileopenbox(msg='Select waveform data.', title=None, default='*', filetypes=['*.csv'], multiple=True)
+    else:
+        pass
+    if filenames:
+        for filename in filenames:
+            print filename.encode('utf-8')
+            names=['t','XOR','CLK','SMUX_IN','SMUX_OUT8','SMUX_OUT7','SMUX_OUT6','SMUX_OUT5','SMUX_OUT4','SMUX_OUT3','SMUX_OUT2','SMUX_OUT1']
+            df=pd.read_csv(filename,sep='\t',skiprows=22,names=names)
+            if len(df.index) == 0:
+                print u'blank file!'
+                error_name=np.nan
+                duration=np.nan
+                error_mode=np.nan
+            else:
+                dt0=8.000000E-10 #delta t for XOR
+                dt1=2.000000E-9  #delta t for degital signal
+                df.t=df.index*dt0*10**6  #us
+                df.t1=df.index*dt1*10**6 #us
+                tmp = pd.DataFrame(index=[''], columns=[])
+                if df.SMUX_OUT8.mean()<0.5:
+
+                    tmp['SMUX_IN'] = df['SMUX_IN'][df['SMUX_IN']==1].count()*dt1
+                    tmp['SMUX_OUT1'] = df['SMUX_OUT1'][df['SMUX_OUT1']==1].count()*dt1
+                    tmp['SMUX_OUT2'] = df['SMUX_OUT2'][df['SMUX_OUT2']==1].count()*dt1
+                    tmp['SMUX_OUT3'] = df['SMUX_OUT3'][df['SMUX_OUT3']==1].count()*dt1
+                    tmp['SMUX_OUT4'] = df['SMUX_OUT4'][df['SMUX_OUT4']==1].count()*dt1
+                    tmp['SMUX_OUT5'] = df['SMUX_OUT5'][df['SMUX_OUT5']==1].count()*dt1
+                    tmp['SMUX_OUT6'] = df['SMUX_OUT6'][df['SMUX_OUT6']==1].count()*dt1
+                    tmp['SMUX_OUT7'] = df['SMUX_OUT7'][df['SMUX_OUT7']==1].count()*dt1
+                    tmp['SMUX_OUT8'] = df['SMUX_OUT8'][df['SMUX_OUT8']==1].count()*dt1
+                else:
+                    tmp['error_mode']='HighToLow'
+                    tmp['SMUX_IN'] = df['SMUX_IN'][df['SMUX_IN']==0].count()*dt1
+                    tmp['SMUX_OUT1'] = df['SMUX_OUT1'][df['SMUX_OUT1']==0].count()*dt1
+                    tmp['SMUX_OUT2'] = df['SMUX_OUT2'][df['SMUX_OUT2']==0].count()*dt1
+                    tmp['SMUX_OUT3'] = df['SMUX_OUT3'][df['SMUX_OUT3']==0].count()*dt1
+                    tmp['SMUX_OUT4'] = df['SMUX_OUT4'][df['SMUX_OUT4']==0].count()*dt1
+                    tmp['SMUX_OUT5'] = df['SMUX_OUT5'][df['SMUX_OUT5']==0].count()*dt1
+                    tmp['SMUX_OUT6'] = df['SMUX_OUT6'][df['SMUX_OUT6']==0].count()*dt1
+                    tmp['SMUX_OUT7'] = df['SMUX_OUT7'][df['SMUX_OUT7']==0].count()*dt1
+                    tmp['SMUX_OUT8'] = df['SMUX_OUT8'][df['SMUX_OUT8']==0].count()*dt1
+                duration=pd.concat([duration, tmp], ignore_index=True)
+        duration=duration.dropna()
+        return duration
+
+def scanfolder(dir=[],extension='.csv'):
+    df=pd.DataFrame(index=[], columns=['file'])
+    if dir:
+        pass
+    else:
+        dir=filename=easygui.diropenbox()
+    for path, dirs, files in tqdm_notebook(os.walk(dir)):
+        for f in files:
+            if f.endswith(extension):
+                # print os.path.join(path, f)
+                tmp= pd.DataFrame({ 'file' : os.path.join(path, f) },index=[1])
+                df=df.append(tmp,ignore_index=True)
+    return df
+
+def energy2LET(energy=1000,R=0.3539,d=0.035,l=0.0001):
+    # R=0.3539
+    E0=energy    #[pJ]
+    Ep=3.6     #[eV]??
+    Er=1.17    #[eV]
+    alpha=14.8 #[cm-1]
+    # d=0.035     #[cm]
+    # l=0.0001   #[cm]
+    rho=2330   #[mg/cm3]
+    q=1.602e-19#[ev/J]
+    LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6 #[MeV/(mg/cm2)]
+    return LET
+
+def fit_weibull(LET,cross_section,A,x0,W,S,option=False):
+    def Weibull(x,A,x0,W,S):
+        return A*(1-np.exp(-((x-x0)/W)**S))
+
+    model=lmfit.Model(Weibull)
+    params = model.make_params()
+    params.add('A', value=A, min=0, max=np.inf)
+    params.add('x0', value=x0, min=0, max=np.inf)
+    params.add('W', value=W, min=0, max=np.inf)
+    params.add('S', value=S, min=0, max=np.inf)
+    fit = model.fit(cross_section, params, x=LET ,fit_kws={'nan_policy':'omit'})
+    print fit.fit_report()
+    if option:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        plt.style.use('classic')
+        plt.plot(LET,cross_section,'ro')
+        t=np.arange(0,100,0.1)
+        plt.plot(t,Weibull(t,**fit.values),'b')
+        plt.grid()
+        plt.yscale('log')
+        # plt.xscale('log')
+        plt.xlim([0,100])
+        # plt.ylim([1e-10,1e-7])
+        plt.ylabel(r'$cross\ section\ [cm^2/bit]$')
+        plt.xlabel(r'$LET\ [MeV/(mg/cm^2)]$')
+        plt.show()
+    return fit
+
+def digital_filter(data,dt,fcutoff,n=1,type='bessel',response=False,show=False,fft=False):
+    #data   : filtering data  [-]
+    #dt     : time resolution [s]
+    #fcutoff: Cutoff frequency[Hz]
+    #type   : filter type, 'bessel','butter'
+    #n      : filter order    [-]
+    # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.bessel.html#scipy.signal.bessel
+    # https://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.signal.freqz.html#scipy.signal.freqz
+
+    N = len(data)            # sample
+    t = np.arange(0, N*dt, dt) # time
+    fn=1.0/dt/2 #nyqfreq
+    Ws = fcutoff/fn #normalize
+    if type=='bessel':
+        b, a = signal.bessel(n, Ws, 'low', analog=False,norm='mag') #bessel filter
+    elif type=='butter':
+        b, a = signal.butter(n, Ws, 'low')
+    y = signal.filtfilt(b, a, data) #filter
+    w,h=signal.freqz(b,a,worN=100000,whole=True) #freqztakeu
+
+    if response:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        plt.style.use('classic')
+#         plt.axhline(-3,ls='--',color='k')
+        plt.axvline(fcutoff,ls='--',color='k')
+        plt.plot(w/np.pi*fn, 20 * np.log10(abs(h)), 'b')
+        plt.ylabel('Amplitude [dB]', color='b')
+        plt.ylim([-50,0])
+        plt.xlabel('Frequency [Hz]')
+        ax1=plt.twinx()
+        ax1.plot(w/np.pi*fn, np.unwrap(np.angle(h)), 'r')
+        ax1.set_ylabel('Phase [degree]', color='r')
+        ax1.set_ylim(top=0)
+        plt.xscale('log')
+#         plt.grid()
+        plt.gca().set_xlim(right=fn)
+        plt.show()
+
+    if show:
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        plt.style.use('classic')
+        plt.plot(t,data,'b-',alpha=0.5)
+#         plt.ylim([-0.1,0.1])
+#         plt.xlim([-20,60])
+        plt.grid()
+        plt.plot(t,y,'r-')
+        plt.ylabel('Data')
+        plt.xlabel('Time [s]')
+        plt.show()
+
+    if fft:
+        F = np.fft.fft(y) #fft
+        Amp = np.abs(F) #amplitude
+        Pow = Amp ** 2 #power
+        freq = np.linspace(0, 1.0/dt, N) #frequency
+        fig=plt.figure(facecolor ="#FFFFFF",figsize=(8,5))
+        plt.style.use('classic')
+        plt.plot(freq, Pow,'r')
+        plt.plot(freq,np.abs(np.fft.fft(data))**2,'b',alpha=0.5)
+        plt.xlabel('Frequency [Hz]')
+        plt.ylabel('Power')
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.gca().set_xlim(right=fn)
+        plt.axvline(fcutoff,ls='--',color='k')
+        plt.grid()
+        plt.show()
+
+    return [y,t,b,a,w,h] #output
+
+    def laser2LET(FWHM,E0th,E0,R=0.3539,d=0.03,l=0.00001,type='fixed_Buchner'):
+        """
+        Laserエネルギー->LET変換
+
+        Parameters
+        ----------
+        FWHM : int or float
+            パルスレーザ焦点面での半値全幅[um] (使用せず)
+        E0th : int or float
+            当該デバイスでSEUが発生する閾値[pJ]
+        E0 : arrays of float or int
+            LETに変換したいLaserエネルギー[pJ]
+        R : float, default 0.3539
+            反射率[無次元]
+            デフォルト値=0.3539
+        d : float, default 0.03
+            感応領域までのSi基板厚み
+            デフォルト値=0.03[cm] (300um)
+        l :float, default 0.00001
+            感応層厚み
+            デフォルト値=0.00001[cm] (100nm)
+        type : str, default 'fixed_Buchner'
+            計算方式。デフォルト値='fixed_Buchner'
+                'Buchner':
+                    Buchner式
+                    Buchner, S. P., Miller, F., Pouget, V., McMorrow, D. P. and Member, S. (2013) ‘Pulsed-Laser Testing for Single Event Effects Investigations’, IEEE Transactions on Nuclear Science, 60(3), pp. 1852–1875.
+
+                'fixed_Buchner':
+                    竹内-行松修正Buchner式
+
+                'threshold':
+                    閾値を考慮した竹内-行松修正Buchner式
+
+        Returns
+        -------
+        LET : arrays of float or int
+            LET。
+
+        Notes
+        -----
+
+        """
+        Ep=3.6     #[eV]
+        Er=1.17    #[eV]Siのバンドギャップ
+        alpha=14.8 #[cm-1]Siの透過率@1064nm
+        rho=2330   #[mg/cm3]Si密度
+        q=1.602e-19#[ev/J]素電荷
+
+        sigma=FWHM/2/np.sqrt(2*np.log(2))
+        if type=='fixed_Buchner':
+            LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
+        elif type=='Buchner':
+            LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)/rho/d*1e-6
+        elif type=='threshold':
+            LET=(1-R)*(E0-E0th)*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
+        else:
+            LET=0
+    return LET
