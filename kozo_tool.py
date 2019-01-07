@@ -2401,9 +2401,10 @@ def add_finfet_SEU_data(filename=[]):
                         km.fit(X)                         # クラスタリングの計算を実行
                         distortions.append(km.inertia_)   # km.fitするとkm.inertia_が求まる
                         y_km = km.fit_predict(X)
-
-                    if distortions!=[]:
-                        dist=pd.Series(distortions)
+                    dist=pd.Series(distortions)
+                    # if distortions!=[]:
+                    if dist[dist<100].shape[0]!=0:
+                        # dist=pd.Series(distortions)
                         df['infer'][df['MSel']==i]=dist[dist<100].idxmax()+1
                         km = KMeans(n_clusters=dist[dist<100].idxmax()+1,         # クラスターの個数
                                     init='k-means++',     # k-means++法によりクラスタ中心を選択
