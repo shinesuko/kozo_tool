@@ -24,6 +24,7 @@ from scipy.stats import linregress
 from scipy import stats
 import lmfit
 from tqdm import tqdm,tqdm_notebook
+from sklearn.cluster import KMeans
 
 def read_current_data(filename=[]):
     if not(filename):
@@ -2230,61 +2231,196 @@ def digital_filter(data,dt,fcutoff,n=1,type='bessel',response=False,show=False,f
 
     return [y,t,b,a,w,h] #output
 
-    def laser2LET(FWHM,E0th,E0,R=0.3539,d=0.03,l=0.00001,type='fixed_Buchner'):
-        """
-        Laserエネルギー->LET変換
+def laser2LET(E0,E0th=1000,R=0.3539,d=0.03,l=0.00001,type='fixed_Buchner'):
+    """
+    Laserエネルギー->LET変換
 
-        Parameters
-        ----------
-        FWHM : int or float
-            パルスレーザ焦点面での半値全幅[um] (使用せず)
-        E0th : int or float
-            当該デバイスでSEUが発生する閾値[pJ]
-        E0 : arrays of float or int
-            LETに変換したいLaserエネルギー[pJ]
-        R : float, default 0.3539
-            反射率[無次元]
-            デフォルト値=0.3539
-        d : float, default 0.03
-            感応領域までのSi基板厚み
-            デフォルト値=0.03[cm] (300um)
-        l :float, default 0.00001
-            感応層厚み
-            デフォルト値=0.00001[cm] (100nm)
-        type : str, default 'fixed_Buchner'
-            計算方式。デフォルト値='fixed_Buchner'
-                'Buchner':
-                    Buchner式
-                    Buchner, S. P., Miller, F., Pouget, V., McMorrow, D. P. and Member, S. (2013) ‘Pulsed-Laser Testing for Single Event Effects Investigations’, IEEE Transactions on Nuclear Science, 60(3), pp. 1852–1875.
+    Parameters
+    ----------
+    E0 : float or int
+        LETに変換したいLaserエネルギー[pJ]
+    E0th : int or float, default 1000
+        当該デバイスでSEUが発生する閾値[pJ]
+        type='threshold'で使用
+        デフォルト値=1000[pJ]
+    R : float, default 0.3539
+        反射率[無次元]
+        デフォルト値=0.3539
+    d : float, default 0.03
+        感応領域までのSi基板厚み
+        デフォルト値=0.03[cm] (300um)
+    l :float, default 0.00001
+        感応層厚み
+        デフォルト値=0.00001[cm] (100nm)
+    type : str, default 'fixed_Buchner'
+        計算方式。デフォルト値='fixed_Buchner'
+            'Buchner':
+                Buchner式
+                Buchner, S. P., Miller, F., Pouget, V., McMorrow, D. P. and Member, S. (2013)
+                ‘Pulsed-Laser Testing for Single Event Effects Investigations’,
+                IEEE Transactions on Nuclear Science, 60(3), pp. 1852–1875.
 
-                'fixed_Buchner':
-                    竹内-行松修正Buchner式
+            'fixed_Buchner':
+                竹内-行松修正Buchner式
 
-                'threshold':
-                    閾値を考慮した竹内-行松修正Buchner式
+            'threshold':
+                閾値を考慮した竹内-行松修正Buchner式
 
-        Returns
-        -------
-        LET : arrays of float or int
-            LET。
+    Returns
+    -------
+    LET : float or int
+        変換後LET
 
-        Notes
-        -----
+    Notes
+    -----
 
-        """
-        Ep=3.6     #[eV]
-        Er=1.17    #[eV]Siのバンドギャップ
-        alpha=14.8 #[cm-1]Siの透過率@1064nm
-        rho=2330   #[mg/cm3]Si密度
-        q=1.602e-19#[ev/J]素電荷
+    """
+    Ep=3.6     #[eV]
+    Er=1.17    #[eV]Siのバンドギャップ
+    alpha=14.8 #[cm-1]Siの透過率@1064nm
+    rho=2330   #[mg/cm3]Si密度
+    q=1.602e-19#[ev/J]素電荷
 
-        sigma=FWHM/2/np.sqrt(2*np.log(2))
-        if type=='fixed_Buchner':
-            LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
-        elif type=='Buchner':
-            LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)/rho/d*1e-6
-        elif type=='threshold':
-            LET=(1-R)*(E0-E0th)*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
-        else:
-            LET=0
+    if type=='fixed_Buchner':
+        LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
+    elif type=='Buchner':
+        LET=(1-R)*E0*1e-12/q/Er/Ep*np.exp(-alpha*d)/rho/d*1e-6
+    elif type=='threshold':
+        LET=(1-R)*(E0-E0th)*1e-12/q/Er/Ep*np.exp(-alpha*d)*(1-np.exp(-alpha*l))/rho/l*1e-6
+    else:
+        LET=0
     return LET
+
+def SEU2CrossSection(N_SEU,FWHM,E0th,E0,Achip,Nbit,Xrange=100,Yrange=100,Xstep=1,Ystep=1,type='Buchner'):
+    """
+    Pulsed Laser SEU->断面積変換
+
+    Parameters
+    ----------
+    N_SEU :
+        SEU発生回数
+    FWHM : int of float
+        パルスレーザ焦点面での半値全幅[um]
+    E0th : int or float, default 1000
+        当該デバイスでSEUが発生する閾値[pJ]
+        type='threshold'で使用
+        デフォルト値=1000[pJ]
+    E0 : float or int
+        Pulsed Laserエネルギー[pJ]
+    Achip : float or int
+    Ascan : float or int
+    Nbit : float or int
+    Xrange, Yrange : float or int
+    Xstep, Ystep : float or int
+    type :
+        'Takeuchi' :
+        'fixed_Takeuchi' :
+        'Buchner' :
+        'Yukumatsu' :
+
+
+    Returns
+    -------
+    cross_section : float or int
+        断面積
+    error : float or int
+        標準偏差
+
+    Notes
+    -----
+
+    """
+    #変数定義
+    sigma=FWHM/2/np.sqrt(2*np.log(2))
+    cross_section=np.nan
+    error=np.nan
+    Ascan=Xrange*Yrange
+    Nlaser=(float(Xrange)/Xstep+1.0)*(float(Yrange)/Ystep+1.0)
+    Abit=Achip/Nbit
+
+    if type=='Takeuchi':
+        cross_section=float(N_SEU)*(FWHM/2)**2*np.pi*float(Achip)/float(Ascan)/float(Nbit)
+        error=np.sqrt(float(N_SEU))*(FWHM/2)**2*np.pi*float(Achip)/float(Ascan)/float(Nbit)
+    elif type=='fixed_Takeuchi':
+        cross_section=float(N_SEU)*Abit/((FWHM/2)**2*np.pi*Nlaser)*float(Achip)/float(Nbit)
+        error=np.sqrt(float(N_SEU))*Abit/((FWHM/2)**2*np.pi*Nlaser)*float(Achip)/float(Nbit)
+    elif type=='Buchner':
+        if E0th<E0:
+            R=np.sqrt(2*sigma*np.log(float(E0)/float(E0th)))
+            cross_section=float(N_SEU)*Abit/(R**2*np.pi*Nlaser)*float(Achip)/float(Nbit)
+            error=np.sqrt(float(N_SEU))*Abit/(R**2*np.pi*Nlaser)*float(Achip)/float(Nbit)
+    elif type=='Yukumatsu':
+        cross_section=float(N_SEU)*Abit*float(Achip)/float(Ascan)/float(Nbit)
+        error=np.sqrt(float(N_SEU))*Abit*float(Achip)/float(Ascan)/float(Nbit)
+    else:
+        pass
+
+    return cross_section,error
+
+def add_finfet_SEU_data(filename=[]):
+    print('Starting... add_finfet_SEU_data.')
+    if not(filename):
+        filename=easygui.fileopenbox(msg='Open mydata.', title=None, default='*', filetypes=['*.mydata'], multiple=False)
+    else:
+        pass
+
+    if filename:
+        os.chdir(os.path.dirname(filename))
+        os.chdir('..')
+        print('cd to... '+os.getcwd())
+        data=load_data(filename=filename)
+        formatted = '%03d' % int(data.irradiation['number'])
+        ion=data.irradiation['ion'].values
+        print(ion+formatted+'.mydata is seleced')
+        filename_SEU=easygui.fileopenbox(msg='Open '+ion+formatted+' SEU data.', title=None, default='*', filetypes=['*.txt'], multiple=False)
+        if filename_SEU:
+            data.SEU=pd.DataFrame(index=[], columns=[])
+            if 'SEU' in data.field:
+                pass
+            else:
+                data.field.append('SEU')
+            phrase='Board'
+            with open(filename_SEU) as f:
+                for i, line in enumerate(f, 1):
+                    if phrase in line:
+                        break
+            df=pd.read_csv(filename_SEU,sep='\t',skiprows=i-1)
+            df['infer']=np.zeros_like(df.MSel.values)
+            df['label']=np.zeros_like(df.MSel.values)
+            for i in tqdm(df['MSel'].unique()):
+                if len(df.PCol[df['MSel']==i])!=0:
+                    X=np.c_[df[['PCol','PRow']][df.MSel==i]]
+                    distortions = []
+
+                    for ii  in range(1,len(X)):                # 1~10クラスタまで一気に計算
+                        km = KMeans(n_clusters=ii,         # クラスターの個数
+                                    init='k-means++',     # k-means++法によりクラスタ中心を選択
+                                    n_init=10,            # 異なるセントロイドの初期値を用いたk-meansの実行回数 default: '10' 実行したうちもっとSSE値が小さいモデルを最終モデルとして選択
+                                    max_iter=300,         # k-meansアルゴリズムの内部の最大イテレーション回数  default: '300'
+                                    random_state=0)       # セントロイドの初期化に用いる乱数発生器の状態
+                        km.fit(X)                         # クラスタリングの計算を実行
+                        distortions.append(km.inertia_)   # km.fitするとkm.inertia_が求まる
+                        y_km = km.fit_predict(X)
+
+                    if distortions!=[]:
+                        dist=pd.Series(distortions)
+                        df['infer'][df['MSel']==i]=dist[dist<100].idxmax()+1
+                        km = KMeans(n_clusters=dist[dist<100].idxmax()+1,         # クラスターの個数
+                                    init='k-means++',     # k-means++法によりクラスタ中心を選択
+                                    n_init=10,            # 異なるセントロイドの初期値を用いたk-meansの実行回数 default: '10' 実行したうちもっとSSE値が小さいモデルを最終モデルとして選択
+                                    max_iter=300,         # k-meansアルゴリズムの内部の最大イテレーション回数  default: '300'
+                                    random_state=0)       # セントロイドの初期化に用いる乱数発生器の状態
+                        km.fit(X)                         # クラスタリングの計算を実行
+                        df['label'][df['MSel']==i]=km.labels_
+                    else:
+                        df['infer'][df['MSel']==i]=1
+                        df['label'][df['MSel']==i]=1
+            print df
+            data.SEU=pd.concat([data.SEU,df])
+            save_data(data,filename)
+            print('Saving... current data at '+filename.encode('utf-8'))
+        else:
+            print('Canceled.')
+    else:
+        pass
+    print('End of add_finfet_SEU_data.')
